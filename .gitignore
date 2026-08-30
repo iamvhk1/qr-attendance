@@ -1,0 +1,29 @@
+# === Build output ===
+target/
+*.jar
+*.war
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*~
+
+# === H2 database files ===
+data/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Logs ===
+*.log
+logs/
+
+# === Environment ===
+.env
+*.env
