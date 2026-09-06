@@ -46,6 +46,7 @@ public class SecurityConfig {
                 // Role specific
                 .requestMatchers("/api/professor/**").hasRole("PROFESSOR")
                 .requestMatchers("/api/courses/**").hasRole("PROFESSOR")
+                .requestMatchers("/api/students/**").hasRole("PROFESSOR")
                 .requestMatchers("/api/sessions/**").hasRole("PROFESSOR")
                 // Scan token protected
                 .requestMatchers("/api/student/scan").hasRole("SCAN")

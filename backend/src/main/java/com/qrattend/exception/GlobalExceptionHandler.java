@@ -34,6 +34,13 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
+    // ── 403 Forbidden ───────────────────────────────────────
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
     // ── 404 Not Found ───────────────────────────────────────
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -58,6 +65,13 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining("; "));
 
         return buildResponse(HttpStatus.BAD_REQUEST, message);
+    }
+
+    // ── 400 Bad Request (IllegalArgument — e.g. Excel parse errors) ──
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     // ── 500 Internal Server Error (fallback) ────────────────
