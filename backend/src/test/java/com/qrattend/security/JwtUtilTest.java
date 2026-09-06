@@ -488,4 +488,110 @@ class JwtUtilTest {
             });
         }
     }
+
+    // ═══════════════════════════════════════════════════════════
+    //  INVITE TOKEN
+    // ═══════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Invite Token")
+    class InviteTokenTests {
+
+        @Test
+        @DisplayName("generateInviteToken produces a non-blank JWT string")
+        void generatesNonBlankToken() {
+            String token = jwtUtil.generateInviteToken();
+            assertThat(token).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("isInviteToken returns true for an invite token")
+        void isInviteTokenTrue() {
+            String token = jwtUtil.generateInviteToken();
+            assertThat(jwtUtil.isInviteToken(token)).isTrue();
+        }
+
+        @Test
+        @DisplayName("isInviteToken returns false for a login token")
+        void isInviteTokenFalseForLogin() {
+            String token = jwtUtil.generateLoginToken(UUID.randomUUID(), "test@iitm.ac.in");
+            assertThat(jwtUtil.isInviteToken(token)).isFalse();
+        }
+
+        @Test
+        @DisplayName("isInviteToken returns false for a scan token")
+        void isInviteTokenFalseForScan() {
+            String token = jwtUtil.generateScanToken(UUID.randomUUID());
+            assertThat(jwtUtil.isInviteToken(token)).isFalse();
+        }
+
+        @Test
+        @DisplayName("isLoginToken and isScanToken return false for an invite token")
+        void inviteTokenNotLoginOrScan() {
+            String token = jwtUtil.generateInviteToken();
+            assertThat(jwtUtil.isLoginToken(token)).isFalse();
+            assertThat(jwtUtil.isScanToken(token)).isFalse();
+        }
+
+        @Test
+        @DisplayName("extractTokenType returns INVITE for an invite token")
+        void extractTokenTypeReturnsInvite() {
+            String token = jwtUtil.generateInviteToken();
+            assertThat(jwtUtil.extractTokenType(token)).isEqualTo("INVITE");
+        }
+
+        @Test
+        @DisplayName("extractProfessorId throws IllegalStateException for an INVITE token")
+        void extractProfessorIdThrowsForInviteToken() {
+            String token = jwtUtil.generateInviteToken();
+            assertThatThrownBy(() -> jwtUtil.extractProfessorId(token))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("LOGIN");
+        }
+
+        @Test
+        @DisplayName("extractSessionId throws IllegalStateException for an INVITE token")
+        void extractSessionIdThrowsForInviteToken() {
+            String token = jwtUtil.generateInviteToken();
+            assertThatThrownBy(() -> jwtUtil.extractSessionId(token))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("SCAN");
+        }
+
+        @Test
+        @DisplayName("extractEmail throws IllegalStateException for an INVITE token")
+        void extractEmailThrowsForInviteToken() {
+            String token = jwtUtil.generateInviteToken();
+            assertThatThrownBy(() -> jwtUtil.extractEmail(token))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("LOGIN");
+        }
+
+        @Test
+        @DisplayName("isTokenExpired returns false for a fresh invite token")
+        void freshInviteTokenNotExpired() {
+            String token = jwtUtil.generateInviteToken();
+            assertThat(jwtUtil.isTokenExpired(token)).isFalse();
+        }
+
+        @Test
+        @DisplayName("Invite token with 0ms expiration is immediately expired")
+        void zeroExpirationInviteToken() {
+            JwtUtil zeroExpiry = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 0L);
+            String token = zeroExpiry.generateInviteToken();
+            assertThat(zeroExpiry.isTokenExpired(token)).isTrue();
+        }
+
+        @Test
+        @DisplayName("validateToken returns claims with subject 'admin-invite' and type INVITE")
+        void validateTokenReturnsClaims() {
+            String token = jwtUtil.generateInviteToken();
+            Claims claims = jwtUtil.validateToken(token);
+
+            assertThat(claims.getSubject()).isEqualTo("admin-invite");
+            assertThat(claims.get("type", String.class)).isEqualTo("INVITE");
+            assertThat(claims.getIssuedAt()).isNotNull();
+            assertThat(claims.getExpiration()).isNotNull();
+        }
+    }
 }

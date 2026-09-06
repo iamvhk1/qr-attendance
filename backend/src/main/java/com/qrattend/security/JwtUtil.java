@@ -180,16 +180,20 @@ public class JwtUtil {
     }
 
     /**
-     * Checks whether a token has expired.
-     * Returns {@code true} if the token is expired, {@code false} if still valid.
+     * Checks whether a token has expired or is otherwise invalid.
+     * Returns {@code true} if the token is expired/invalid, {@code false} if still valid.
      * <p>
      * Unlike the other extract methods, this does NOT throw on expired tokens —
      * it catches the expiration exception and returns true.
+     * <p>
+     * Note: JJWT's {@code parseSignedClaims} already rejects expired tokens by
+     * throwing {@code ExpiredJwtException}, so a successful {@code validateToken}
+     * call guarantees the token is not expired.
      */
     public boolean isTokenExpired(String token) {
         try {
-            Claims claims = validateToken(token);
-            return claims.getExpiration().before(new Date());
+            validateToken(token);
+            return false;
         } catch (JwtException e) {
             // If parsing fails because the token is expired (or any other reason),
             // we consider it "expired" from the caller's perspective.

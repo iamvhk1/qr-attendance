@@ -37,7 +37,11 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints
                 .requestMatchers("/api/auth/**").permitAll() // Login / Register
-                .requestMatchers("/api/admin/**").permitAll() // Admin invite generation (custom secret protected)
+                // IMPORTANT: /api/admin/** bypasses JWT authentication entirely.
+                // Security is enforced at the controller level via a shared admin secret
+                // (app.admin.secret). Any NEW endpoint under /api/admin/ will also be
+                // publicly accessible — ensure controller-level authorization is applied.
+                .requestMatchers("/api/admin/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll() // H2 DB console
                 // Role specific
                 .requestMatchers("/api/professor/**").hasRole("PROFESSOR")
