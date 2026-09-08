@@ -39,6 +39,26 @@ class QRCLI(cmd.Cmd):
     def req_headers(self):
         return {"Authorization": f"Bearer {self.state.get('token')}"}
 
+    def handle_401(self, res, action_desc="last action"):
+        """If a response is 401, attempt to refresh the token and return True so caller can retry."""
+        if res.status_code == 401:
+            print(Fore.YELLOW + f"Session token expired. Re-authenticating...")
+            try:
+                refresh_res = requests.post(f"{API_BASE}/auth/login", json={
+                    "email": self.state.get("email", "prof.cli@college.edu"),
+                    "password": self.state.get("password", "SecurePass123!")
+                })
+                refresh_res.raise_for_status()
+                self.state["token"] = refresh_res.json()["token"]
+                self.save_state()
+                print(Fore.GREEN + "Re-authenticated! Please retry your command.")
+            except Exception as e:
+                print(Fore.RED + f"Re-authentication failed: {e}. Running full setup...")
+                self.state = {}
+                self.auto_setup()
+            return True
+        return False
+
     def auto_setup(self):
         print(Fore.YELLOW + "No saved session found. Running auto-setup...")
         
@@ -70,6 +90,9 @@ class QRCLI(cmd.Cmd):
         })
         res.raise_for_status()
         self.state["token"] = res.json()["token"]
+        # Save credentials for future token refresh
+        self.state["email"] = user_email
+        self.state["password"] = user_pass
 
         # 4. Create Course
         print(Fore.YELLOW + "Creating default course (CS101)...")
@@ -98,6 +121,7 @@ class QRCLI(cmd.Cmd):
                             headers=self.req_headers(), 
                             json={"rollNumber": roll, "fullName": name})
         
+        if self.handle_401(res): return  # Token expired — user prompted to retry
         if res.status_code == 201:
             print(Fore.GREEN + f"Added student: {roll} - {name}")
         else:
@@ -124,6 +148,7 @@ class QRCLI(cmd.Cmd):
                 res = requests.post(f"{API_BASE}/courses/{self.state['course_id']}/students/import",
                                     headers=self.req_headers(),
                                     files={'file': f})
+            if self.handle_401(res): return  # Token expired — user prompted to retry
             if res.status_code == 200:
                 rep = res.json()
                 print(Fore.GREEN + f"Sync complete! Added: {rep['added']}, Removed: {rep['removed']}, Total: {rep['totalAfterSync']}")
@@ -139,6 +164,7 @@ class QRCLI(cmd.Cmd):
             return
         
         res = requests.get(f"{API_BASE}/courses/{self.state['course_id']}/students", headers=self.req_headers())
+        if self.handle_401(res): return  # Token expired — user prompted to retry
         if res.status_code == 200:
             students = res.json()
             print(Fore.CYAN + f"\n--- Enrolled Students ({len(students)}) ---")
@@ -162,6 +188,7 @@ class QRCLI(cmd.Cmd):
             "durationSeconds": duration
         })
         
+        if self.handle_401(res): return  # Token expired — user prompted to retry
         if res.status_code == 201:
             session_id = res.json()["id"]
             print(Fore.GREEN + f"Session started! ID: {session_id}")

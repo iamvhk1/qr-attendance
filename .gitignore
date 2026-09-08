@@ -27,3 +27,16 @@ logs/
 # === Environment ===
 .env
 *.env
+
+# === CLI state (contains live JWT tokens — do NOT commit) ===
+cli/.cli-state.json
+
+# === Stale properties backups ===
+*.properties.txt
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
