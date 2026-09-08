@@ -33,6 +33,7 @@ public class CourseService {
     /**
      * Lists all courses owned by the given professor.
      */
+    @Transactional(readOnly = true)
     public List<CourseResponse> listCourses(UUID professorId) {
         return courseRepository.findByProfessorId(professorId).stream()
                 .map(CourseResponse::fromEntity)
@@ -62,6 +63,7 @@ public class CourseService {
     /**
      * Fetches a single course, verifying the professor owns it.
      */
+    @Transactional(readOnly = true)
     public CourseResponse getCourse(UUID courseId, UUID professorId) {
         Course course = getOwnedCourse(courseId, professorId);
         return CourseResponse.fromEntity(course);

@@ -87,6 +87,11 @@ public class ExcelImportUtil {
                 // Skip empty rows
                 if (rollNumber.isEmpty() || fullName.isEmpty()) continue;
 
+                // Validate roll number format: 2 letters, 2 numbers, 1 letter, 3 digits
+                if (!rollNumber.matches("^[A-Za-z]{2}\\d{2}[A-Za-z]\\d{3}$")) {
+                    continue; // Skip invalid roll numbers
+                }
+
                 // Deduplicate by roll number (keep first occurrence)
                 if (seenRollNumbers.add(rollNumber)) {
                     students.add(StudentRequest.builder()

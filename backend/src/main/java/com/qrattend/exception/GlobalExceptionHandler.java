@@ -4,9 +4,11 @@ import com.qrattend.dto.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.stream.Collectors;
 
@@ -55,6 +57,11 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    @ExceptionHandler(SessionClosedException.class)
+    public ResponseEntity<ErrorResponse> handleSessionClosed(SessionClosedException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
     // ── 400 Validation Errors (@Valid) ──────────────────────
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -64,6 +71,22 @@ public class GlobalExceptionHandler {
                 .sorted()
                 .collect(Collectors.joining("; "));
 
+        return buildResponse(HttpStatus.BAD_REQUEST, message);
+    }
+
+    // ── 400 Bad Request (unreadable body — malformed JSON) ──────
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Malformed or unreadable request body");
+    }
+
+    // ── 400 Bad Request (path / query param type mismatch) ──────
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String message = String.format("Invalid value '%s' for parameter '%s'",
+                ex.getValue(), ex.getName());
         return buildResponse(HttpStatus.BAD_REQUEST, message);
     }
 

@@ -112,29 +112,6 @@ class ExcelImportUtilTest {
 
             assertThat(result).hasSize(2);
         }
-
-        @Test
-        void handlesNumericRollNumbers() throws IOException {
-            try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-                XSSFSheet sheet = workbook.createSheet("Students");
-                XSSFRow header = sheet.createRow(0);
-                header.createCell(0).setCellValue("roll_number");
-                header.createCell(1).setCellValue("full_name");
-
-                XSSFRow row = sheet.createRow(1);
-                row.createCell(0).setCellValue(24001);  // Numeric cell
-                row.createCell(1).setCellValue("Alice");
-
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                workbook.write(out);
-                ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
-
-                List<StudentRequest> result = ExcelImportUtil.parseStudentExcel(in);
-
-                assertThat(result).hasSize(1);
-                assertThat(result.get(0).getRollNumber()).isEqualTo("24001");
-            }
-        }
     }
 
     @Nested

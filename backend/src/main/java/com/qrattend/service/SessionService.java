@@ -1,0 +1,208 @@
+package com.qrattend.service;
+
+import com.google.zxing.WriterException;
+import com.qrattend.dto.session.SessionRequest;
+import com.qrattend.dto.session.SessionResponse;
+import com.qrattend.entity.Course;
+import com.qrattend.entity.Professor;
+import com.qrattend.entity.QrSession;
+import com.qrattend.exception.ForbiddenException;
+import com.qrattend.exception.ResourceNotFoundException;
+import com.qrattend.exception.SessionClosedException;
+import com.qrattend.repository.CourseRepository;
+import com.qrattend.repository.ProfessorRepository;
+import com.qrattend.repository.QrSessionRepository;
+import com.qrattend.security.JwtUtil;
+import com.qrattend.util.QrGenerator;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+
+/**
+ * Business logic for QR attendance session management.
+ *
+ * <p>Responsibilities:</p>
+ * <ul>
+ *   <li>Create a session with a configurable window (default 120s)</li>
+ *   <li>Generate a rolling 15-second QR code PNG on demand</li>
+ *   <li>Return session details (including computed LIVE / CLOSED status)</li>
+ * </ul>
+ *
+ * <p>The rolling QR mechanism works as follows:
+ * <ol>
+ *   <li>The professor's frontend polls {@code GET /api/sessions/{id}/qr} every ~14 seconds.</li>
+ *   <li>Each call generates a <em>fresh</em> 15-second scan JWT via {@link JwtUtil#generateScanToken}.</li>
+ *   <li>That JWT is embedded in the scan URL, which is then encoded as a QR PNG.</li>
+ *   <li>The session entity in the DB is <em>not</em> modified on each QR fetch — only the JWT changes.</li>
+ *   <li>A student who scans the QR gets the URL. If they submit after 15s, the JWT is expired and
+ *       the server rejects the scan — preventing WhatsApp sharing attacks.</li>
+ * </ol>
+ * </p>
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class SessionService {
+
+    private final QrSessionRepository sessionRepository;
+    private final CourseRepository courseRepository;
+    private final ProfessorRepository professorRepository;
+    private final JwtUtil jwtUtil;
+
+    @Value("${app.session.default-duration-seconds}")
+    private int defaultDurationSeconds;
+
+    @Value("${app.frontend.url}")
+    private String frontendUrl;
+
+    /** Width and height of the generated QR code PNG in pixels. */
+    private static final int QR_SIZE_PX = 300;
+
+    // ── Create ──────────────────────────────────────────────
+
+    /**
+     * Creates a new QR attendance session for the given course.
+     *
+     * <p>The session window is set to {@code now + durationSeconds}. If
+     * {@code durationSeconds} is null, the server default (120s) is used.</p>
+     *
+     * @param request     contains courseId and optional durationSeconds
+     * @param professorId the authenticated professor's UUID (from JWT)
+     * @return the created session as a response DTO
+     * @throws ResourceNotFoundException if the course does not exist
+     * @throws ForbiddenException        if the professor does not own the course
+     */
+    @Transactional
+    public SessionResponse createSession(SessionRequest request, UUID professorId) {
+        Course course = getOwnedCourse(request.getCourseId(), professorId);
+        Professor professor = professorRepository.findById(professorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Professor not found"));
+
+        int duration = (request.getDurationSeconds() != null)
+                ? request.getDurationSeconds()
+                : defaultDurationSeconds;
+
+        Instant expiresAt = Instant.now().plus(duration, ChronoUnit.SECONDS);
+
+        QrSession session = QrSession.builder()
+                .course(course)
+                .professor(professor)
+                .expiresAt(expiresAt)
+                .build();
+
+        QrSession saved = sessionRepository.save(session);
+        log.info("Session created: {} for course {} by professor {} (window: {}s)",
+                saved.getId(), course.getId(), professorId, duration);
+
+        return SessionResponse.fromEntity(saved);
+    }
+
+    // ── Read ─────────────────────────────────────────────────
+
+    /**
+     * Returns the details of a single session, including its computed LIVE / CLOSED status.
+     *
+     * @param sessionId   the session UUID
+     * @param professorId the authenticated professor's UUID
+     * @return the session as a response DTO
+     * @throws ResourceNotFoundException if the session does not exist
+     * @throws ForbiddenException        if the professor does not own the session
+     */
+    @Transactional(readOnly = true)
+    public SessionResponse getSession(UUID sessionId, UUID professorId) {
+        QrSession session = getOwnedSession(sessionId, professorId);
+        return SessionResponse.fromEntity(session);
+    }
+
+    // ── QR Image ─────────────────────────────────────────────
+
+    /**
+     * Generates a fresh QR code PNG for the given session.
+     *
+     * <p>This is the core of the rolling QR mechanism. Every call:</p>
+     * <ol>
+     *   <li>Verifies the session is still live (not closed, not expired)</li>
+     *   <li>Generates a <em>new</em> 15-second scan JWT (subject = sessionId, type = SCAN)</li>
+     *   <li>Embeds the JWT in a scan URL: {@code {frontendUrl}/scan?token={jwt}}</li>
+     *   <li>Encodes that URL as a 300×300 QR code PNG</li>
+     * </ol>
+     *
+     * <p>The professor frontend polls this endpoint every ~14 seconds so that
+     * the displayed QR always contains a fresh, unexpired token.</p>
+     *
+     * @param sessionId   the session UUID
+     * @param professorId the authenticated professor's UUID
+     * @return raw PNG bytes ready to send as {@code image/png}
+     * @throws SessionClosedException    if the session is already closed or expired
+     * @throws ResourceNotFoundException if the session does not exist
+     * @throws ForbiddenException        if the professor does not own the session
+     */
+    @Transactional(readOnly = true)
+    public byte[] getQrImageBytes(UUID sessionId, UUID professorId) {
+        String scanUrl = getQrUrl(sessionId, professorId);
+        try {
+            byte[] png = QrGenerator.generatePng(scanUrl, QR_SIZE_PX, QR_SIZE_PX);
+            log.debug("QR PNG generated for session {}", sessionId);
+            return png;
+        } catch (WriterException | IOException e) {
+            log.error("QR generation failed for session {}: {}", sessionId, e.getMessage());
+            throw new RuntimeException("Failed to generate QR code", e);
+        }
+    }
+
+    /**
+     * Generates a fresh 15-second scan URL for the CLI to use natively.
+     */
+    @Transactional(readOnly = true)
+    public String getQrUrl(UUID sessionId, UUID professorId) {
+        QrSession session = getOwnedSession(sessionId, professorId);
+
+        if (session.isClosed()) {
+            throw new SessionClosedException(
+                    "Cannot generate QR URL: session " + sessionId + " is closed or expired");
+        }
+
+        String scanToken = jwtUtil.generateScanToken(sessionId);
+        String scanUrl = frontendUrl + "/scan?token=" + scanToken;
+        log.debug("QR URL generated for session {} — expires in 15s", sessionId);
+        
+        return scanUrl;
+    }
+
+    // ── Internal helpers ─────────────────────────────────────
+
+    /**
+     * Fetches a course by ID and verifies that the professor owns it.
+     * Mirrors the identical helper in {@link CourseService} to avoid a cross-service dependency.
+     */
+    private Course getOwnedCourse(UUID courseId, UUID professorId) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + courseId));
+
+        if (!course.getProfessor().getId().equals(professorId)) {
+            throw new ForbiddenException("You do not own course " + courseId);
+        }
+        return course;
+    }
+
+    /**
+     * Fetches a session by ID and verifies that the logged-in professor owns it
+     * (by checking ownership of the linked course).
+     */
+    private QrSession getOwnedSession(UUID sessionId, UUID professorId) {
+        QrSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found: " + sessionId));
+
+        if (!session.getCourse().getProfessor().getId().equals(professorId)) {
+            throw new ForbiddenException("You do not own session " + sessionId);
+        }
+        return session;
+    }
+}

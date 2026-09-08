@@ -16,6 +16,7 @@ public class StudentRequest {
 
     @NotBlank(message = "Roll number is required")
     @Size(max = 20, message = "Roll number must be at most 20 characters")
+    @jakarta.validation.constraints.Pattern(regexp = "^[A-Za-z]{2}\\d{2}[A-Za-z]\\d{3}$", message = "Roll number must be in format XX00X000 (e.g. CS24B075)")
     private String rollNumber;
 
     @NotBlank(message = "Full name is required")

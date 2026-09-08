@@ -100,8 +100,21 @@ public class StudentService {
     public RosterSyncReport importStudents(UUID courseId, UUID professorId, InputStream excelFile) {
         Course course = courseService.getOwnedCourse(courseId, professorId);
 
-        // 1. Parse Excel
-        List<StudentRequest> fromExcel = ExcelImportUtil.parseStudentExcel(excelFile);
+        // 1. Parse Excel — treat "no data rows" as an intentionally empty roster
+        //    (Excel is source of truth: uploading an empty sheet removes all students)
+        List<StudentRequest> fromExcel;
+        try {
+            fromExcel = ExcelImportUtil.parseStudentExcel(excelFile);
+        } catch (IllegalArgumentException ex) {
+            String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";
+            if (msg.contains("no valid student") || msg.contains("empty")) {
+                // Empty Excel = intentional: wipe the roster
+                fromExcel = List.of();
+            } else {
+                // Real parse error (missing columns, corrupt file, etc.) → rethrow → 400
+                throw ex;
+            }
+        }
 
         // 2. Fetch existing students
         List<Student> existingStudents = studentRepository.findByCourseId(courseId);
