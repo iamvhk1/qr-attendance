@@ -362,8 +362,21 @@ class TimingIntegrationTest {
          *
          * This is what prevents "WhatsApp sharing" attacks where students forward
          * the QR to absent classmates who scan it later.
+         *
+         * NOTE: We create a dedicated fresh session here rather than reusing
+         * persistedSessionId, because by this point (after test-31's 2.5s sleep)
+         * the shared 10-second session may already be expired and the QR endpoint
+         * would return an error instead of a PNG.
          */
-        byte[] pngBytes = mockMvc.perform(get("/api/sessions/" + persistedSessionId + "/qr")
+        MvcResult sessionResult = mockMvc.perform(post("/api/sessions")
+                        .header("Authorization", "Bearer " + jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"courseId\":\"" + persistedCourseId + "\",\"durationSeconds\":30}"))
+                .andExpect(status().isCreated()).andReturn();
+        UUID freshSessionId = UUID.fromString(
+                objectMapper.readTree(sessionResult.getResponse().getContentAsString()).get("id").asText());
+
+        byte[] pngBytes = mockMvc.perform(get("/api/sessions/" + freshSessionId + "/qr")
                         .header("Authorization", "Bearer " + jwt()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();

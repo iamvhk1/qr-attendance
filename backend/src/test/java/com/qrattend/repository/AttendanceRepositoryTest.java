@@ -55,7 +55,7 @@ class AttendanceRepositoryTest {
         Attendance found = attendanceRepository.findById(saved.getId()).orElseThrow();
 
         assertThat(found.getRollNumber()).isEqualTo("CS24B001");
-        assertThat(found.getStatus()).isEqualTo("CONFIRMED");
+        assertThat(found.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
         assertThat(found.getManuallyAdded()).isFalse();
         assertThat(found.getMarkedAt()).isNotNull();
     }
@@ -70,7 +70,7 @@ class AttendanceRepositoryTest {
 
         Attendance found = attendanceRepository.findById(saved.getId()).orElseThrow();
 
-        assertThat(found.getStatus()).isEqualTo("PENDING");
+        assertThat(found.getStatus()).isEqualTo(AttendanceStatus.PENDING);
         assertThat(found.getPresenceStart()).isNotNull();
         assertThat(found.getPresenceEnd()).isNotNull();
         assertThat(found.getPresenceEnd()).isAfter(found.getPresenceStart());
@@ -88,7 +88,7 @@ class AttendanceRepositoryTest {
         Attendance found = attendanceRepository.findById(saved.getId()).orElseThrow();
 
         assertThat(found.getManuallyAdded()).isTrue();
-        assertThat(found.getStatus()).isEqualTo("CONFIRMED"); // manual = immediately confirmed
+        assertThat(found.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED); // manual = immediately confirmed
         assertThat(found.getOverrideReason()).isEqualTo("Phone battery died");
         assertThat(found.getAddedByProfessor()).isNotNull();
         assertThat(found.getAddedByProfessor().getId()).isEqualTo(professor.getId());
@@ -144,9 +144,9 @@ class AttendanceRepositoryTest {
         entityManager.flush();
 
         List<Attendance> pending = attendanceRepository.findBySessionIdAndStatus(
-                session.getId(), "PENDING");
+                session.getId(), AttendanceStatus.PENDING);
         List<Attendance> confirmed = attendanceRepository.findBySessionIdAndStatus(
-                session.getId(), "CONFIRMED");
+                session.getId(), AttendanceStatus.CONFIRMED);
 
         assertThat(pending).hasSize(2);
         assertThat(confirmed).hasSize(1);
@@ -160,9 +160,9 @@ class AttendanceRepositoryTest {
         attendanceRepository.save(TestDataFactory.pendingAttendance(session, "CS24B003"));
         entityManager.flush();
 
-        assertThat(attendanceRepository.countBySessionIdAndStatus(session.getId(), "CONFIRMED")).isEqualTo(2);
-        assertThat(attendanceRepository.countBySessionIdAndStatus(session.getId(), "PENDING")).isEqualTo(1);
-        assertThat(attendanceRepository.countBySessionIdAndStatus(session.getId(), "INVALIDATED")).isEqualTo(0);
+        assertThat(attendanceRepository.countBySessionIdAndStatus(session.getId(), AttendanceStatus.CONFIRMED)).isEqualTo(2);
+        assertThat(attendanceRepository.countBySessionIdAndStatus(session.getId(), AttendanceStatus.PENDING)).isEqualTo(1);
+        assertThat(attendanceRepository.countBySessionIdAndStatus(session.getId(), AttendanceStatus.INVALIDATED)).isEqualTo(0);
     }
 
     // ── Constraints ─────────────────────────────────────────
@@ -202,13 +202,13 @@ class AttendanceRepositoryTest {
                 TestDataFactory.pendingAttendance(session, "CS24B001"));
         entityManager.flush();
 
-        attendance.setStatus("CONFIRMED");
+        attendance.setStatus(AttendanceStatus.CONFIRMED);
         attendance.setHeartbeatCoverage(0.92f);
         entityManager.flush();
         entityManager.clear();
 
         Attendance found = attendanceRepository.findById(attendance.getId()).orElseThrow();
-        assertThat(found.getStatus()).isEqualTo("CONFIRMED");
+        assertThat(found.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
         assertThat(found.getHeartbeatCoverage()).isEqualTo(0.92f);
     }
 
@@ -219,13 +219,13 @@ class AttendanceRepositoryTest {
                 TestDataFactory.pendingAttendance(session, "CS24B001"));
         entityManager.flush();
 
-        attendance.setStatus("INVALIDATED");
+        attendance.setStatus(AttendanceStatus.INVALIDATED);
         attendance.setHeartbeatCoverage(0.45f);
         entityManager.flush();
         entityManager.clear();
 
         Attendance found = attendanceRepository.findById(attendance.getId()).orElseThrow();
-        assertThat(found.getStatus()).isEqualTo("INVALIDATED");
+        assertThat(found.getStatus()).isEqualTo(AttendanceStatus.INVALIDATED);
         assertThat(found.getHeartbeatCoverage()).isEqualTo(0.45f);
     }
 }

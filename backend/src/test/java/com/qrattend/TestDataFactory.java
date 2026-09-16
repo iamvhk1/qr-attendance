@@ -104,7 +104,7 @@ public final class TestDataFactory {
                 .session(session)
                 .rollNumber(rollNumber)
                 .studentName("Student " + rollNumber)
-                .status("CONFIRMED")
+                .status(AttendanceStatus.CONFIRMED)
                 .manuallyAdded(false)
                 .build();
     }
@@ -115,7 +115,7 @@ public final class TestDataFactory {
                 .session(session)
                 .rollNumber(rollNumber)
                 .studentName("Student " + rollNumber)
-                .status("PENDING")
+                .status(AttendanceStatus.PENDING)
                 .manuallyAdded(false)
                 .presenceStart(Instant.now())
                 .presenceEnd(Instant.now().plus(90, ChronoUnit.SECONDS))
@@ -128,7 +128,7 @@ public final class TestDataFactory {
                 .session(session)
                 .rollNumber(rollNumber)
                 .studentName("Student " + rollNumber)
-                .status("CONFIRMED")
+                .status(AttendanceStatus.CONFIRMED)
                 .manuallyAdded(true)
                 .addedByProfessor(professor)
                 .overrideReason("Phone battery died")

@@ -33,27 +33,31 @@ public class JwtUtil {
     private static final String CLAIM_TYPE  = "type";
     private static final String CLAIM_EMAIL = "email";
 
-    private static final String TYPE_LOGIN = "LOGIN";
-    private static final String TYPE_SCAN  = "SCAN";
-    private static final String TYPE_INVITE = "INVITE";
+    private static final String TYPE_LOGIN    = "LOGIN";
+    private static final String TYPE_SCAN     = "SCAN";
+    private static final String TYPE_INVITE   = "INVITE";
+    private static final String TYPE_ATTENDANCE = "ATTENDANCE";
 
     private final SecretKey signingKey;
     private final long loginExpirationMs;
     private final long scanExpirationMs;
     private final long inviteExpirationMs;
+    private final long attendanceExpirationMs;
 
     public JwtUtil(
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.login-expiration-ms}") long loginExpirationMs,
             @Value("${app.jwt.scan-expiration-ms}") long scanExpirationMs,
-            @Value("${app.jwt.invite-expiration-ms}") long inviteExpirationMs) {
+            @Value("${app.jwt.invite-expiration-ms}") long inviteExpirationMs,
+            @Value("${app.jwt.attendance-expiration-ms:7200000}") long attendanceExpirationMs) {
 
         // HMAC-SHA256 requires a key of at least 256 bits (32 bytes).
         // We derive the key from the configured secret string.
-        this.signingKey       = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.loginExpirationMs = loginExpirationMs;
-        this.scanExpirationMs  = scanExpirationMs;
-        this.inviteExpirationMs = inviteExpirationMs;
+        this.signingKey          = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.loginExpirationMs   = loginExpirationMs;
+        this.scanExpirationMs    = scanExpirationMs;
+        this.inviteExpirationMs  = inviteExpirationMs;
+        this.attendanceExpirationMs = attendanceExpirationMs;
     }
 
     // ── Token generation ────────────────────────────────────
@@ -116,6 +120,29 @@ public class JwtUtil {
                 .compact();
     }
 
+    /**
+     * Creates a 2-hour attendance token used to authenticate heartbeat pings.
+     *
+     * <p>Issued when a student successfully scans the QR code. Subject = attendanceId.
+     * This token lasts the duration of the class and authorises only the
+     * {@code POST /api/student/heartbeat} endpoint (ROLE_ATTENDANCE).</p>
+     *
+     * @param attendanceId the UUID of the created {@link com.qrattend.entity.Attendance} record
+     * @return a signed JWT string
+     */
+    public String generateAttendanceToken(UUID attendanceId) {
+        Date now    = new Date();
+        Date expiry = new Date(now.getTime() + attendanceExpirationMs);
+
+        return Jwts.builder()
+                .subject(attendanceId.toString())
+                .claim(CLAIM_TYPE, TYPE_ATTENDANCE)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
+    }
+
     // ── Token validation ────────────────────────────────────
 
     /**
@@ -156,6 +183,18 @@ public class JwtUtil {
     public UUID extractSessionId(String token) {
         Claims claims = validateToken(token);
         assertTokenType(claims, TYPE_SCAN);
+        return UUID.fromString(claims.getSubject());
+    }
+
+    /**
+     * Extracts the attendance UUID from an ATTENDANCE token.
+     *
+     * @throws JwtException          if the token is invalid or expired
+     * @throws IllegalStateException if the token is not of type ATTENDANCE
+     */
+    public UUID extractAttendanceId(String token) {
+        Claims claims = validateToken(token);
+        assertTokenType(claims, TYPE_ATTENDANCE);
         return UUID.fromString(claims.getSubject());
     }
 
@@ -228,6 +267,16 @@ public class JwtUtil {
         try {
             Claims claims = validateToken(token);
             return TYPE_INVITE.equals(claims.get(CLAIM_TYPE, String.class));
+        } catch (JwtException e) {
+            return false;
+        }
+    }
+
+    /** Returns true if the token is a valid ATTENDANCE token (not expired, correct type). */
+    public boolean isAttendanceToken(String token) {
+        try {
+            Claims claims = validateToken(token);
+            return TYPE_ATTENDANCE.equals(claims.get(CLAIM_TYPE, String.class));
         } catch (JwtException e) {
             return false;
         }

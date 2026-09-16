@@ -71,6 +71,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
+                // Handle Student Attendance Tokens (for heartbeat pings)
+                else if (jwtUtil.isAttendanceToken(jwt)) {
+                    UUID attendanceId = jwtUtil.extractAttendanceId(jwt);
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    attendanceId,
+                                    null,
+                                    List.of(new SimpleGrantedAuthority("ROLE_ATTENDANCE")));
+
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
             }
         } catch (Exception e) {
             log.error("Cannot set user authentication: {}", e.getMessage());

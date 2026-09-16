@@ -45,7 +45,7 @@ class JwtAuthenticationFilterTest {
 
     @BeforeEach
     void setUp() {
-        jwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, INVITE_EXPIRATION_MS);
+        jwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, INVITE_EXPIRATION_MS, 7200000L);
         filter = new JwtAuthenticationFilter(jwtUtil);
         filterChain = mock(FilterChain.class);
         request = new MockHttpServletRequest();
@@ -97,7 +97,7 @@ class JwtAuthenticationFilterTest {
     @DisplayName("Expired token → filter chain continues, no authentication set")
     void expiredToken_noAuthentication() throws ServletException, IOException {
         // Create a JwtUtil with 0ms login expiration → token is immediately expired
-        JwtUtil expiredJwtUtil = new JwtUtil(TEST_SECRET, 0L, SCAN_EXPIRATION_MS, INVITE_EXPIRATION_MS);
+        JwtUtil expiredJwtUtil = new JwtUtil(TEST_SECRET, 0L, SCAN_EXPIRATION_MS, INVITE_EXPIRATION_MS, 7200000L);
         String expiredToken = expiredJwtUtil.generateLoginToken(UUID.randomUUID(), "test@iitm.ac.in");
 
         request.addHeader("Authorization", "Bearer " + expiredToken);
@@ -200,8 +200,12 @@ class JwtAuthenticationFilterTest {
     @DisplayName("Token signed with a different secret → no authentication set")
     void differentSecretToken_noAuthentication() throws ServletException, IOException {
         JwtUtil otherJwtUtil = new JwtUtil(
-                "YW5vdGhlci1zZWNyZXQta2V5LXRoYXQtaXMtZGlmZmVyZW50LWZyb20tdGhlLW9yaWdpbmFsLWtleQ==",
-                LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, INVITE_EXPIRATION_MS);
+                "DifferentSecretKeyThatIsAtLeast32BytesLong!",
+                LOGIN_EXPIRATION_MS,
+                SCAN_EXPIRATION_MS,
+                INVITE_EXPIRATION_MS,
+                7200000L
+        );
         String foreignToken = otherJwtUtil.generateLoginToken(UUID.randomUUID(), "hacker@evil.com");
 
         request.addHeader("Authorization", "Bearer " + foreignToken);

@@ -11,10 +11,7 @@ import java.util.UUID;
  * Represents a single attendance record — one student in one session.
  * Created when a student scans the QR and submits, or when a professor manually overrides.
  *
- * Status lifecycle:
- *   PENDING → CONFIRMED  (heartbeat coverage ≥ 80%)
- *   PENDING → INVALIDATED (heartbeat coverage < 80%)
- *   CONFIRMED (immediate — for manual overrides, no dwell time required)
+ * <p>Status lifecycle: see {@link AttendanceStatus} for the full state machine.</p>
  */
 @Entity
 @Table(name = "attendance", uniqueConstraints = {
@@ -60,10 +57,11 @@ public class Attendance {
 
     // ----- Presence verification fields -----
 
-    /** PENDING = awaiting heartbeat confirmation, CONFIRMED = attendance counts, INVALIDATED = treated as absent. */
+    /** Current state of this attendance record. See {@link AttendanceStatus} for the full lifecycle. */
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private String status = "CONFIRMED";
+    private AttendanceStatus status = AttendanceStatus.PENDING;
 
     /** When the dwell timer started (set on initial scan submission). */
     private Instant presenceStart;
@@ -73,4 +71,11 @@ public class Attendance {
 
     /** Computed coverage ratio (0.0 to 1.0) after session closes. Null until computed. */
     private Float heartbeatCoverage;
+
+    /**
+     * The rotating cryptographic nonce this student's next heartbeat must present.
+     * Generated on initial scan, rotated on every valid heartbeat, cleared when session closes.
+     */
+    @Column(length = 64)
+    private String currentNonce;
 }

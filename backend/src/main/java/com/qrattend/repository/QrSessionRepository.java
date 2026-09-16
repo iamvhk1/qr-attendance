@@ -13,4 +13,6 @@ public interface QrSessionRepository extends JpaRepository<QrSession, UUID> {
     List<QrSession> findByCourseId(UUID courseId);
 
     List<QrSession> findByCourseIdOrderByCreatedAtDesc(UUID courseId);
+
+    List<QrSession> findByExpiresAtBeforeAndClosedAtIsNull(java.time.Instant instant);
 }
