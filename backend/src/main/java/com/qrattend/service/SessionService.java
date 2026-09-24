@@ -1,15 +1,20 @@
 package com.qrattend.service;
 
 import com.google.zxing.WriterException;
+import com.qrattend.dto.session.AttendanceResponse;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
+import com.qrattend.entity.Attendance;
+import com.qrattend.entity.AttendanceStatus;
 import com.qrattend.entity.Course;
 import com.qrattend.entity.Professor;
 import com.qrattend.entity.QrSession;
 import com.qrattend.exception.ForbiddenException;
 import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
+import com.qrattend.repository.AttendanceRepository;
 import com.qrattend.repository.CourseRepository;
+import com.qrattend.repository.HeartbeatRepository;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.repository.QrSessionRepository;
 import com.qrattend.security.JwtUtil;
@@ -23,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -54,6 +60,8 @@ public class SessionService {
     private final QrSessionRepository sessionRepository;
     private final CourseRepository courseRepository;
     private final ProfessorRepository professorRepository;
+    private final AttendanceRepository attendanceRepository;
+    private final HeartbeatRepository heartbeatRepository;
     private final JwtUtil jwtUtil;
 
     @Value("${app.session.default-duration-seconds}")
@@ -176,6 +184,86 @@ public class SessionService {
         return scanUrl;
     }
 
+    // ── Close ─────────────────────────────────────────────────
+
+    /**
+     * Closes a live session early on the professor's request.
+     *
+     * <p>This is the professor's "End Session" button. It sets {@code closedAt = now()}
+     * and immediately finalises all PENDING attendance records using the same
+     * coverage computation as the scheduled job — so students don't have to wait
+     * up to 60 seconds for results after the professor manually ends the session.</p>
+     *
+     * @param sessionId   the session UUID to close
+     * @param professorId the authenticated professor's UUID
+     * @return the updated session as a response DTO
+     * @throws SessionClosedException    if the session is already closed
+     * @throws ResourceNotFoundException if the session does not exist
+     * @throws ForbiddenException        if the professor does not own the session
+     */
+    @Transactional
+    public SessionResponse closeSession(UUID sessionId, UUID professorId) {
+        QrSession session = getOwnedSession(sessionId, professorId);
+
+        if (session.isClosed()) {
+            throw new SessionClosedException("Session " + sessionId + " is already closed");
+        }
+
+        // Immediately finalise all PENDING attendance records.
+        // Mirrors the scheduled coverage job so results are instant.
+        List<Attendance> pending = attendanceRepository
+                .findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING);
+
+        for (Attendance att : pending) {
+            long expectedHeartbeats = computeExpectedHeartbeats(att, session);
+            long actualHeartbeats = heartbeatRepository
+                    .countBySessionIdAndRollNumber(sessionId, att.getRollNumber());
+
+            float coverage = (float) actualHeartbeats / expectedHeartbeats;
+            att.setHeartbeatCoverage(coverage);
+            att.setStatus(coverage >= COVERAGE_THRESHOLD
+                    ? AttendanceStatus.CONFIRMED
+                    : AttendanceStatus.INVALIDATED);
+        }
+
+        if (!pending.isEmpty()) {
+            attendanceRepository.saveAll(pending);
+        }
+
+        session.setClosedAt(Instant.now());
+        QrSession saved = sessionRepository.save(session);
+
+        log.info("Session {} manually closed by professor {} — finalised {} attendance record(s)",
+                sessionId, professorId, pending.size());
+
+        return SessionResponse.fromEntity(saved);
+    }
+
+    // ── Attendance list ───────────────────────────────────────
+
+    /**
+     * Returns all attendance records for a session, ordered by scan time.
+     *
+     * <p>Used by the professor dashboard to show who has scanned and their
+     * current presence status in real time (via polling).</p>
+     *
+     * @param sessionId   the session UUID
+     * @param professorId the authenticated professor's UUID
+     * @return list of {@link AttendanceResponse} DTOs
+     * @throws ResourceNotFoundException if the session does not exist
+     * @throws ForbiddenException        if the professor does not own the session
+     */
+    @Transactional(readOnly = true)
+    public List<AttendanceResponse> listAttendance(UUID sessionId, UUID professorId) {
+        // Ownership check — ensures professors can't peek at each other's sessions
+        getOwnedSession(sessionId, professorId);
+
+        return attendanceRepository.findBySessionId(sessionId)
+                .stream()
+                .map(AttendanceResponse::fromEntity)
+                .toList();
+    }
+
     // ── Internal helpers ─────────────────────────────────────
 
     /**
@@ -205,4 +293,25 @@ public class SessionService {
         }
         return session;
     }
+
+    /**
+     * Computes the number of heartbeats expected from a student over their presence window.
+     * Duplicated from {@link PresenceService} to avoid a cross-service dependency.
+     *
+     * <p>Formula: {@code ceil((presenceEnd - presenceStart) / 5s)}, clamped to ≥ 1.</p>
+     */
+    private long computeExpectedHeartbeats(Attendance att, QrSession session) {
+        Instant start = att.getPresenceStart() != null ? att.getPresenceStart() : session.getCreatedAt();
+        Instant end   = att.getPresenceEnd()   != null ? att.getPresenceEnd()   : session.getExpiresAt();
+
+        long durationSeconds = ChronoUnit.SECONDS.between(start, end);
+        long expected = (long) Math.ceil((double) durationSeconds / HEARTBEAT_INTERVAL_SECONDS);
+        return Math.max(expected, 1L);
+    }
+
+    /** Heartbeat interval must match {@link PresenceService#HEARTBEAT_INTERVAL_SECONDS}. */
+    private static final int HEARTBEAT_INTERVAL_SECONDS = 5;
+
+    /** Coverage threshold must match {@link PresenceService#COVERAGE_THRESHOLD}. */
+    private static final float COVERAGE_THRESHOLD = 0.80f;
 }

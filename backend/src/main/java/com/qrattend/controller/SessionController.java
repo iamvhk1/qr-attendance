@@ -1,5 +1,6 @@
 package com.qrattend.controller;
 
+import com.qrattend.dto.session.AttendanceResponse;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.service.SessionService;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -101,6 +103,42 @@ public class SessionController {
         UUID professorId = getProfessorId();
         String url = sessionService.getQrUrl(id, professorId);
         return ResponseEntity.ok(new com.qrattend.dto.session.QrDataResponse(url));
+    }
+
+    // ── PATCH /api/sessions/{id}/close ───────────────────────
+
+    /**
+     * Closes a live session early (professor's "End Session" button).
+     *
+     * <p>Sets {@code closedAt = now()} and immediately finalises all PENDING
+     * attendance records — no need to wait for the 60-second coverage scheduler.
+     * Returns {@code 409 Conflict} if the session is already closed.</p>
+     *
+     * @return 200 OK with the updated {@link SessionResponse} (status will be "CLOSED")
+     */
+    @PatchMapping("/{id}/close")
+    public ResponseEntity<SessionResponse> closeSession(@PathVariable UUID id) {
+        UUID professorId = getProfessorId();
+        SessionResponse closed = sessionService.closeSession(id, professorId);
+        return ResponseEntity.ok(closed);
+    }
+
+    // ── GET /api/sessions/{id}/attendance ────────────────────
+
+    /**
+     * Returns the list of attendance records for a session.
+     *
+     * <p>Used by the professor dashboard to show a live roster of who has scanned
+     * and each student's current presence status ({@code PENDING}, {@code CONFIRMED},
+     * or {@code INVALIDATED}). Poll this endpoint every 5 seconds for live updates.</p>
+     *
+     * @return 200 OK with a list of {@link AttendanceResponse}
+     */
+    @GetMapping("/{id}/attendance")
+    public ResponseEntity<List<AttendanceResponse>> listAttendance(@PathVariable UUID id) {
+        UUID professorId = getProfessorId();
+        List<AttendanceResponse> records = sessionService.listAttendance(id, professorId);
+        return ResponseEntity.ok(records);
     }
 
     // ── Helper ───────────────────────────────────────────────
