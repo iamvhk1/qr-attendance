@@ -1,0 +1,117 @@
+.input-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.input-full { width: 100%; }
+
+/* ── Label ──────────────────────────────────────────────── */
+.input-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.input-wrapper:focus-within + .input-label,
+.input-wrapper:focus-within ~ .input-label {
+  color: var(--primary-400);
+}
+
+/* ── Wrapper ─────────────────────────────────────────────── */
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  transition:
+    border-color var(--duration-normal) var(--ease-out),
+    box-shadow   var(--duration-normal) var(--ease-out),
+    background   var(--duration-normal) var(--ease-out);
+}
+
+.input-wrapper:focus-within {
+  border-color: var(--primary-500);
+  background: var(--bg-overlay);
+  box-shadow: 0 0 0 3px hsl(246 85% 57% / 0.15);
+}
+
+.input-wrapper.input-error {
+  border-color: var(--danger-500);
+  background: hsl(354 50% 9%);
+}
+.input-wrapper.input-error:focus-within {
+  box-shadow: 0 0 0 3px hsl(354 82% 57% / 0.15);
+}
+
+.input-wrapper.input-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Focus line (animated) ──────────────────────────────── */
+.input-focus-line {
+  position: absolute;
+  bottom: 0; left: 50%;
+  width: 0; height: 2px;
+  background: linear-gradient(90deg, var(--primary-400), var(--accent-400));
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  transform: translateX(-50%);
+  transition: width var(--duration-normal) var(--ease-out);
+  pointer-events: none;
+}
+.input-wrapper:focus-within .input-focus-line {
+  width: 100%;
+}
+
+/* ── Control (the actual <input>) ───────────────────────── */
+.input-control {
+  flex: 1;
+  height: 42px;
+  padding: 0 var(--space-4);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  min-width: 0;
+}
+.input-control::placeholder {
+  color: var(--text-muted);
+}
+.input-control:disabled {
+  cursor: not-allowed;
+}
+
+/* Adjust padding when addons present */
+.input-control.has-left-addon  { padding-left: var(--space-2); }
+.input-control.has-right-addon { padding-right: var(--space-2); }
+
+/* ── Addons ──────────────────────────────────────────────── */
+.input-addon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.input-wrapper:focus-within .input-addon {
+  color: var(--primary-400);
+}
+.input-addon-left  { padding-left:  var(--space-3); }
+.input-addon-right { padding-right: var(--space-3); }
+
+/* ── Messages ────────────────────────────────────────────── */
+.input-message {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  animation: fadeIn var(--duration-fast) var(--ease-out);
+  max-width: 100%;
+}
+.input-message-hint  { color: var(--text-muted); }
+.input-message-error { color: var(--danger-400); }

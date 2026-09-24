@@ -1,0 +1,88 @@
+/* ── Spinner ─────────────────────────────────────────────── */
+.loader-svg {
+  animation: spin 0.75s linear infinite;
+  color: var(--text-muted);
+  display: block;
+}
+
+.loader-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Dots ────────────────────────────────────────────────── */
+.loader-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.loader-dots span:not(.sr-only) {
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--primary-400);
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+
+.loader-dots-sm span:not(.sr-only) { width: 5px; height: 5px; }
+.loader-dots-md span:not(.sr-only) { width: 8px; height: 8px; }
+.loader-dots-lg span:not(.sr-only) { width: 12px; height: 12px; }
+
+.loader-dots span:not(.sr-only):nth-child(2) { animation-delay: 0.15s; background: hsl(246 88% 65%); }
+.loader-dots span:not(.sr-only):nth-child(3) { animation-delay: 0.30s; background: var(--accent-400); }
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0);    opacity: 0.5; }
+  40%           { transform: translateY(-6px); opacity: 1;   }
+}
+
+/* ── Pulse ───────────────────────────────────────────────── */
+.loader-pulse {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loader-pulse-sm  { width: 20px; height: 20px; }
+.loader-pulse-md  { width: 32px; height: 32px; }
+.loader-pulse-lg  { width: 48px; height: 48px; }
+
+.loader-pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--primary-400);
+  animation: pulse-ring 1.4s ease-out infinite;
+}
+
+.loader-pulse-ring-delay { animation-delay: 0.7s; border-color: var(--accent-400); }
+
+/* ── Fullscreen overlay ──────────────────────────────────── */
+.loader-fullscreen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(222 47% 5% / 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 9000;
+  animation: fadeIn var(--duration-normal) var(--ease-out);
+}
+
+.loader-fullscreen-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.loader-fullscreen-label {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  max-width: none;
+}
