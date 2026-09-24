@@ -1,15 +1,20 @@
 package com.qrattend.service;
 
 import com.google.zxing.WriterException;
+import com.qrattend.dto.session.AttendanceResponse;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
+import com.qrattend.entity.Attendance;
+import com.qrattend.entity.AttendanceStatus;
 import com.qrattend.entity.Course;
 import com.qrattend.entity.Professor;
 import com.qrattend.entity.QrSession;
 import com.qrattend.exception.ForbiddenException;
 import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
+import com.qrattend.repository.AttendanceRepository;
 import com.qrattend.repository.CourseRepository;
+import com.qrattend.repository.HeartbeatRepository;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.repository.QrSessionRepository;
 import com.qrattend.security.JwtUtil;
@@ -28,6 +33,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,6 +54,8 @@ class SessionServiceTest {
     @Mock private QrSessionRepository sessionRepository;
     @Mock private CourseRepository courseRepository;
     @Mock private ProfessorRepository professorRepository;
+    @Mock private AttendanceRepository attendanceRepository;
+    @Mock private HeartbeatRepository heartbeatRepository;
     @Mock private JwtUtil jwtUtil;
 
     @InjectMocks private SessionService sessionService;
@@ -561,6 +569,329 @@ class SessionServiceTest {
 
             // The rolling QR design: session must NOT be saved/updated on each QR fetch
             verify(sessionRepository, never()).save(any());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  closeSession
+    // ══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("closeSession")
+    class CloseSession {
+
+        private QrSession buildLiveSession() {
+            return QrSession.builder()
+                    .id(sessionId)
+                    .course(course)
+                    .professor(professor)
+                    .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Returns a CLOSED SessionResponse and stamps closedAt")
+        void closesLiveSessionAndReturnsClosedStatus() {
+            QrSession live = buildLiveSession();
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
+            when(attendanceRepository.findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING))
+                    .thenReturn(List.of()); // no pending records
+            when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            SessionResponse result = sessionService.closeSession(sessionId, profId);
+
+            assertThat(result.getStatus()).isEqualTo("CLOSED");
+            assertThat(result.getClosedAt()).isNotNull();
+            verify(sessionRepository).save(live);
+        }
+
+        @Test
+        @DisplayName("Finalises PENDING attendance to CONFIRMED when coverage >= 80%")
+        void finalisesPendingToConfirmedWhenHighCoverage() {
+            QrSession live = buildLiveSession();
+            // 90-second session window, heartbeat every 5s → 18 expected
+            Attendance pending = Attendance.builder()
+                    .session(live)
+                    .rollNumber("CS24B001")
+                    .studentName("Alice")
+                    .status(AttendanceStatus.PENDING)
+                    .presenceStart(Instant.now().minus(90, ChronoUnit.SECONDS))
+                    .presenceEnd(Instant.now())
+                    .build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
+            when(attendanceRepository.findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING))
+                    .thenReturn(List.of(pending));
+            // 16 of 18 heartbeats → coverage = 0.888 → CONFIRMED
+            when(heartbeatRepository.countBySessionIdAndRollNumber(sessionId, "CS24B001"))
+                    .thenReturn(16L);
+            when(attendanceRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            sessionService.closeSession(sessionId, profId);
+
+            assertThat(pending.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
+            assertThat(pending.getHeartbeatCoverage()).isGreaterThanOrEqualTo(0.80f);
+        }
+
+        @Test
+        @DisplayName("Finalises PENDING attendance to INVALIDATED when coverage < 80%")
+        void finalisesPendingToInvalidatedWhenLowCoverage() {
+            QrSession live = buildLiveSession();
+            Attendance pending = Attendance.builder()
+                    .session(live)
+                    .rollNumber("CS24B002")
+                    .studentName("Bob")
+                    .status(AttendanceStatus.PENDING)
+                    .presenceStart(Instant.now().minus(90, ChronoUnit.SECONDS))
+                    .presenceEnd(Instant.now())
+                    .build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
+            when(attendanceRepository.findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING))
+                    .thenReturn(List.of(pending));
+            // 5 of 18 heartbeats → coverage = 0.277 → INVALIDATED
+            when(heartbeatRepository.countBySessionIdAndRollNumber(sessionId, "CS24B002"))
+                    .thenReturn(5L);
+            when(attendanceRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            sessionService.closeSession(sessionId, profId);
+
+            assertThat(pending.getStatus()).isEqualTo(AttendanceStatus.INVALIDATED);
+            assertThat(pending.getHeartbeatCoverage()).isLessThan(0.80f);
+        }
+
+        @Test
+        @DisplayName("Does NOT call attendanceRepository.saveAll when there are no PENDING records")
+        void doesNotSaveWhenNoPendingRecords() {
+            QrSession live = buildLiveSession();
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
+            when(attendanceRepository.findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING))
+                    .thenReturn(List.of());
+            when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            sessionService.closeSession(sessionId, profId);
+
+            verify(attendanceRepository, never()).saveAll(any());
+        }
+
+        @Test
+        @DisplayName("Throws SessionClosedException when session is already naturally expired")
+        void throwsWhenAlreadyExpired() {
+            QrSession expired = QrSession.builder()
+                    .id(sessionId).course(course).professor(professor)
+                    .expiresAt(Instant.now().minus(5, ChronoUnit.MINUTES))
+                    .build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(expired));
+
+            assertThatThrownBy(() -> sessionService.closeSession(sessionId, profId))
+                    .isInstanceOf(SessionClosedException.class)
+                    .hasMessageContaining("already closed");
+
+            verify(sessionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Throws SessionClosedException when session was already explicitly closed")
+        void throwsWhenAlreadyExplicitlyClosed() {
+            QrSession alreadyClosed = QrSession.builder()
+                    .id(sessionId).course(course).professor(professor)
+                    .expiresAt(Instant.now().plus(10, ChronoUnit.MINUTES))
+                    .closedAt(Instant.now().minus(1, ChronoUnit.MINUTES))
+                    .build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(alreadyClosed));
+
+            assertThatThrownBy(() -> sessionService.closeSession(sessionId, profId))
+                    .isInstanceOf(SessionClosedException.class);
+
+            verify(sessionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Throws ForbiddenException when professor does not own the session")
+        void throwsForbiddenWhenNotOwner() {
+            when(sessionRepository.findById(sessionId))
+                    .thenReturn(Optional.of(buildLiveSession()));
+
+            assertThatThrownBy(() -> sessionService.closeSession(sessionId, otherProfId))
+                    .isInstanceOf(ForbiddenException.class);
+
+            verify(sessionRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Throws ResourceNotFoundException when session does not exist")
+        void throwsNotFoundWhenSessionAbsent() {
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> sessionService.closeSession(sessionId, profId))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining(sessionId.toString());
+        }
+
+        @Test
+        @DisplayName("Finalises multiple PENDING records in one close call")
+        void finalisesMultiplePendingRecords() {
+            QrSession live = buildLiveSession();
+            Attendance p1 = Attendance.builder().session(live).rollNumber("CS24B001").studentName("Alice")
+                    .status(AttendanceStatus.PENDING)
+                    .presenceStart(Instant.now().minus(60, ChronoUnit.SECONDS))
+                    .presenceEnd(Instant.now()).build();
+            Attendance p2 = Attendance.builder().session(live).rollNumber("CS24B002").studentName("Bob")
+                    .status(AttendanceStatus.PENDING)
+                    .presenceStart(Instant.now().minus(60, ChronoUnit.SECONDS))
+                    .presenceEnd(Instant.now()).build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
+            when(attendanceRepository.findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING))
+                    .thenReturn(List.of(p1, p2));
+            // p1: 12/12 heartbeats → CONFIRMED; p2: 2/12 → INVALIDATED
+            when(heartbeatRepository.countBySessionIdAndRollNumber(sessionId, "CS24B001")).thenReturn(12L);
+            when(heartbeatRepository.countBySessionIdAndRollNumber(sessionId, "CS24B002")).thenReturn(2L);
+            when(attendanceRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            sessionService.closeSession(sessionId, profId);
+
+            assertThat(p1.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
+            assertThat(p2.getStatus()).isEqualTo(AttendanceStatus.INVALIDATED);
+            verify(attendanceRepository).saveAll(List.of(p1, p2));
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  listAttendance
+    // ══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("listAttendance")
+    class ListAttendance {
+
+        private QrSession buildLiveSession() {
+            return QrSession.builder()
+                    .id(sessionId).course(course).professor(professor)
+                    .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Returns mapped AttendanceResponse list for a session with records")
+        void returnsMappedListForSessionWithRecords() {
+            QrSession session = buildLiveSession();
+            Attendance a1 = Attendance.builder().id(UUID.randomUUID()).session(session)
+                    .rollNumber("CS24B001").studentName("Alice").status(AttendanceStatus.CONFIRMED)
+                    .manuallyAdded(false).build();
+            Attendance a2 = Attendance.builder().id(UUID.randomUUID()).session(session)
+                    .rollNumber("CS24B002").studentName("Bob").status(AttendanceStatus.PENDING)
+                    .manuallyAdded(false).build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(attendanceRepository.findBySessionId(sessionId)).thenReturn(List.of(a1, a2));
+
+            List<AttendanceResponse> result = sessionService.listAttendance(sessionId, profId);
+
+            assertThat(result).hasSize(2);
+            assertThat(result).extracting(AttendanceResponse::getRollNumber)
+                    .containsExactly("CS24B001", "CS24B002");
+            assertThat(result).extracting(AttendanceResponse::getStatus)
+                    .containsExactly("CONFIRMED", "PENDING");
+        }
+
+        @Test
+        @DisplayName("Returns an empty list when no students have scanned yet")
+        void returnsEmptyListWhenNoScans() {
+            when(sessionRepository.findById(sessionId))
+                    .thenReturn(Optional.of(buildLiveSession()));
+            when(attendanceRepository.findBySessionId(sessionId)).thenReturn(List.of());
+
+            List<AttendanceResponse> result = sessionService.listAttendance(sessionId, profId);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("currentNonce is never exposed in the response DTO")
+        void nonceIsNeverExposedInResponse() {
+            QrSession session = buildLiveSession();
+            Attendance a = Attendance.builder().id(UUID.randomUUID()).session(session)
+                    .rollNumber("CS24B001").studentName("Alice").status(AttendanceStatus.PENDING)
+                    .currentNonce("super-secret-nonce-12345").manuallyAdded(false).build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(attendanceRepository.findBySessionId(sessionId)).thenReturn(List.of(a));
+
+            List<AttendanceResponse> result = sessionService.listAttendance(sessionId, profId);
+
+            // AttendanceResponse has no nonce field — compile-time guarantee,
+            // but we verify the mapping completed without exposing it.
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getRollNumber()).isEqualTo("CS24B001");
+        }
+
+        @Test
+        @DisplayName("Correctly maps manual override fields")
+        void mapsManualOverrideFields() {
+            QrSession session = buildLiveSession();
+            Attendance manual = Attendance.builder().id(UUID.randomUUID()).session(session)
+                    .rollNumber("CS24B003").studentName("Carol").status(AttendanceStatus.CONFIRMED)
+                    .manuallyAdded(true).overrideReason("Phone battery died").build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(attendanceRepository.findBySessionId(sessionId)).thenReturn(List.of(manual));
+
+            List<AttendanceResponse> result = sessionService.listAttendance(sessionId, profId);
+
+            assertThat(result.get(0).isManuallyAdded()).isTrue();
+            assertThat(result.get(0).getOverrideReason()).isEqualTo("Phone battery died");
+        }
+
+        @Test
+        @DisplayName("Throws ForbiddenException when professor does not own the session")
+        void throwsForbiddenWhenNotOwner() {
+            when(sessionRepository.findById(sessionId))
+                    .thenReturn(Optional.of(buildLiveSession()));
+
+            assertThatThrownBy(() -> sessionService.listAttendance(sessionId, otherProfId))
+                    .isInstanceOf(ForbiddenException.class);
+
+            verifyNoInteractions(attendanceRepository);
+        }
+
+        @Test
+        @DisplayName("Throws ResourceNotFoundException when session does not exist")
+        void throwsNotFoundWhenSessionAbsent() {
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> sessionService.listAttendance(sessionId, profId))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining(sessionId.toString());
+
+            verifyNoInteractions(attendanceRepository);
+        }
+
+        @Test
+        @DisplayName("Works for a CLOSED session — attendance is still readable after close")
+        void worksForClosedSession() {
+            QrSession closed = QrSession.builder()
+                    .id(sessionId).course(course).professor(professor)
+                    .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                    .closedAt(Instant.now().minus(1, ChronoUnit.MINUTES))
+                    .build();
+
+            Attendance a = Attendance.builder().id(UUID.randomUUID()).session(closed)
+                    .rollNumber("CS24B001").studentName("Alice").status(AttendanceStatus.CONFIRMED)
+                    .manuallyAdded(false).heartbeatCoverage(0.95f).build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(closed));
+            when(attendanceRepository.findBySessionId(sessionId)).thenReturn(List.of(a));
+
+            List<AttendanceResponse> result = sessionService.listAttendance(sessionId, profId);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getHeartbeatCoverage()).isEqualTo(0.95f);
         }
     }
 }
