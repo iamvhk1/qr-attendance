@@ -1,0 +1,299 @@
+/* ── Dashboard Layout ────────────────────────────────────────── */
+
+.dashboard-root {
+  display: flex;
+  min-height: 100dvh;
+  position: relative;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  z-index: 200;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--primary-900);
+  color: var(--primary-200);
+  flex-shrink: 0;
+}
+
+.sidebar-brand-name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  flex: 1;
+}
+
+.sidebar-close-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast);
+}
+.sidebar-close-btn:hover { color: var(--text-primary); }
+
+/* Nav */
+.sidebar-nav {
+  flex: 1;
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+  position: relative;
+}
+.sidebar-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+.sidebar-link-active {
+  color: var(--primary-200) !important;
+  background: var(--primary-900) !important;
+}
+
+.sidebar-chevron {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+.sidebar-link:hover .sidebar-chevron,
+.sidebar-link-active .sidebar-chevron {
+  opacity: 1;
+}
+
+/* Footer */
+.sidebar-footer {
+  padding: var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sidebar-professor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+}
+
+.sidebar-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--primary-600), var(--accent-500));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+.sidebar-professor-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-professor-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: none;
+}
+
+.sidebar-professor-email {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: none;
+}
+
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.sidebar-logout:hover {
+  color: var(--danger-400);
+  border-color: var(--danger-400);
+  background: var(--danger-900);
+}
+
+/* ── Main Area ───────────────────────────────────────────────── */
+
+.dashboard-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Topbar */
+.dashboard-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.topbar-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast);
+}
+.topbar-menu-btn:hover { color: var(--text-primary); }
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.topbar-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.topbar-professor-name {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* Page content */
+.dashboard-content {
+  flex: 1;
+  padding: var(--space-8) var(--space-6);
+  max-width: 1100px;
+  width: 100%;
+  margin-inline: auto;
+  animation: fadeIn var(--duration-slow) var(--ease-out) both;
+}
+
+/* ── Mobile Overlay ──────────────────────────────────────────── */
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: hsl(222 47% 3% / 0.7);
+  backdrop-filter: blur(2px);
+  z-index: 190;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+  }
+
+  .topbar-menu-btn {
+    display: flex;
+  }
+
+  .topbar-professor-name {
+    display: none;
+  }
+
+  .dashboard-content {
+    padding: var(--space-5) var(--space-4);
+  }
+}

@@ -1,0 +1,81 @@
+/* ── Toast Component Styles ──────────────────────────────────── */
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--shadow-lg);
+  min-width: 280px;
+  max-width: 400px;
+  pointer-events: all;
+  /* Start hidden — JS adds .toast-visible to trigger animation */
+  opacity: 0;
+  transform: translateX(24px);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Variant left-border accent */
+.toast-success { border-left: 3px solid var(--accent-400); }
+.toast-error   { border-left: 3px solid var(--danger-400); }
+.toast-warning { border-left: 3px solid var(--warning-400); }
+.toast-info    { border-left: 3px solid var(--primary-400); }
+
+/* Icon */
+.toast-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.toast-success .toast-icon { color: var(--accent-400); }
+.toast-error   .toast-icon { color: var(--danger-400); }
+.toast-warning .toast-icon { color: var(--warning-400); }
+.toast-info    .toast-icon { color: var(--primary-400); }
+
+/* Content */
+.toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+  max-width: none;
+}
+
+.toast-message {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+  max-width: none;
+}
+
+/* Close button */
+.toast-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-out);
+  display: flex;
+  align-items: center;
+}
+.toast-close:hover { color: var(--text-primary); }

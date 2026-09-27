@@ -1,0 +1,144 @@
+.register-root {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6) var(--space-6);
+  position: relative;
+  overflow: hidden;
+}
+
+.register-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+.register-orb-1 {
+  width: 500px; height: 500px;
+  background: hsl(246 85% 57% / 0.10);
+  top: -150px; right: -100px;
+  animation: orbit 24s linear infinite;
+}
+.register-orb-2 {
+  width: 350px; height: 350px;
+  background: hsl(158 68% 44% / 0.07);
+  bottom: -80px; left: -60px;
+  animation: orbit 32s linear infinite reverse;
+}
+
+.register-container {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  position: relative;
+  z-index: 1;
+}
+
+.register-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.register-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--primary-600), var(--primary-900));
+  color: var(--primary-200);
+  border: 1px solid hsl(246 85% 57% / 0.3);
+  box-shadow: var(--shadow-glow-primary);
+  flex-shrink: 0;
+}
+
+.register-app-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.register-app-tagline {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  max-width: 100%;
+}
+
+.register-card {
+  box-shadow: var(--shadow-lg);
+}
+
+.register-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.register-error {
+  font-size: 0.8125rem;
+  color: var(--danger-400);
+  background: var(--danger-900);
+  border: 1px solid hsl(354 50% 30%);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  max-width: 100%;
+  line-height: 1.5;
+}
+
+.register-footer-note {
+  margin-top: var(--space-4);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 100%;
+}
+
+.register-login-link {
+  color: var(--primary-400);
+  font-weight: 500;
+}
+.register-login-link:hover {
+  color: var(--primary-200);
+  text-decoration: underline;
+}
+
+/* Success state */
+.register-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-10) 0;
+  text-align: center;
+}
+
+.register-success-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: var(--accent-900);
+  color: var(--accent-400);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-glow-accent);
+}
+
+.register-success h2 {
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.register-success p {
+  color: var(--text-muted);
+  max-width: 100%;
+}

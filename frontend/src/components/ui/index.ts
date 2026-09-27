@@ -15,3 +15,5 @@ export type { LoaderProps, LoaderVariant, LoaderSize } from './Loader';
 
 export { Badge }         from './Badge';
 export type { BadgeProps, BadgeVariant } from './Badge';
+
+export { ToastItem, ToastViewport } from './Toast';

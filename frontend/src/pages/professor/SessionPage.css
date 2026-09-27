@@ -1,0 +1,288 @@
+/* ── Session Page ────────────────────────────────────────────── */
+
+.session-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Status bar */
+.session-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.status-live {
+  background: var(--accent-900);
+  color: var(--accent-400);
+  border: 1px solid hsl(158 68% 44% / 0.3);
+}
+.status-closed {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-400);
+  animation: pulse-ring 1.2s ease-out infinite;
+  flex-shrink: 0;
+}
+
+/* Two-column grid */
+.session-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* ── QR Panel ────────────────────────────────────────────────── */
+
+.qr-panel { border-radius: var(--radius-xl); }
+
+.qr-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-2) 0;
+}
+
+.qr-frame {
+  position: relative;
+  border-radius: var(--radius-lg);
+  background: white;
+  padding: var(--space-4);
+  box-shadow: var(--shadow-md);
+  display: inline-block;
+}
+
+.qr-code-wrap {
+  display: block;
+  transition: opacity var(--duration-normal);
+}
+.qr-faded { opacity: 0.3; }
+
+.qr-skeleton {
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-offline-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  background: hsl(222 35% 9% / 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: center;
+  padding: var(--space-4);
+}
+
+.qr-offline-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.75rem;
+  color: var(--danger-400);
+}
+
+.qr-online-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.75rem;
+  color: var(--accent-400);
+}
+
+/* Countdown ring */
+.countdown-ring-wrap {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.countdown-time {
+  font-size: 1.375rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  transition: color 0.5s;
+}
+
+.countdown-unit {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.close-session-btn { width: 100%; }
+
+/* Session closed state */
+.session-closed-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  padding: var(--space-8) 0;
+}
+.session-closed-state h3 { font-size: 1.125rem; }
+.session-closed-state p  { color: var(--text-muted); font-size: 0.9rem; max-width: 100%; }
+
+/* ── Attendance Panel ────────────────────────────────────────── */
+
+.attendance-panel { border-radius: var(--radius-xl); }
+
+/* Live indicator */
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-400);
+}
+.live-dot {
+  width: 7px; height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--accent-400);
+  animation: pulse-ring 1.4s ease-out infinite;
+  flex-shrink: 0;
+}
+
+/* Summary row */
+.attendance-summary {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.attendance-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.attendance-stat-confirmed { color: var(--accent-400); }
+.attendance-stat-pending   { color: var(--warning-400); }
+.attendance-stat-invalid   { color: var(--danger-400); }
+
+/* Table */
+.attendance-table-wrap {
+  overflow-x: auto;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.attendance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.attendance-table th,
+.attendance-table td {
+  text-align: left;
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.attendance-table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.attendance-table tr:last-child td { border-bottom: none; }
+.attendance-table tbody tr { transition: background var(--duration-fast); }
+.attendance-table tbody tr:hover { background: var(--bg-elevated); }
+
+.roll-no {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--primary-400);
+}
+
+.time-cell { color: var(--text-muted); font-size: 0.8125rem; }
+.no-coverage { color: var(--border-strong); }
+
+.manual-badge {
+  display: inline-flex;
+  margin-left: var(--space-1);
+  background: var(--primary-900);
+  color: var(--primary-200);
+  border-radius: var(--radius-sm);
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 1px 4px;
+  vertical-align: middle;
+}
+
+/* Empty state */
+.attendance-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+}
+.attendance-empty p { max-width: 100%; }
+
+/* Loading */
+.session-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-16);
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .session-grid {
+    grid-template-columns: 1fr;
+  }
+  .qr-content { padding: var(--space-4) 0; }
+}

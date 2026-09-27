@@ -93,3 +93,25 @@
   text-align: center;
   max-width: 100%;
 }
+
+/* ── Error message ──────────────────────────────────────── */
+.login-error {
+  font-size: 0.8125rem;
+  color: var(--danger-400);
+  background: var(--danger-900);
+  border: 1px solid hsl(354 50% 30%);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  max-width: 100%;
+  line-height: 1.4;
+}
+
+/* ── Register link ──────────────────────────────────────── */
+.login-register-link {
+  color: var(--primary-400);
+  font-weight: 500;
+}
+.login-register-link:hover {
+  color: var(--primary-200);
+  text-decoration: underline;
+}

@@ -4,6 +4,7 @@ import './Card.css';
 export interface CardProps {
   children: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   /** Apply glassmorphism styling */
   glass?: boolean;
   /** Emit a subtle glow on hover */
@@ -18,6 +19,7 @@ export interface CardProps {
 export const Card: React.FC<CardProps> = ({
   children,
   className = '',
+  style,
   glass = false,
   hoverable = false,
   onClick,
@@ -39,6 +41,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={classes}
+      style={style}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
