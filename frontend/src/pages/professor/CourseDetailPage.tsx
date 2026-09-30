@@ -21,7 +21,7 @@ interface AddStudentModalProps {
 }
 
 const AddStudentModal: React.FC<AddStudentModalProps> = ({ courseId, onClose, onAdded }) => {
-  const [form, setForm]     = useState<StudentRequest>({ rollNumber: '', name: '', email: '' });
+  const [form, setForm]     = useState<StudentRequest>({ rollNumber: '', fullName: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
@@ -31,8 +31,8 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ courseId, onClose, on
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!form.rollNumber.trim() || !form.name.trim()) {
-      setError('Roll number and name are required.');
+    if (!form.rollNumber.trim() || !form.fullName.trim()) {
+      setError('Roll number and full name are required.');
       return;
     }
     setLoading(true);
@@ -41,8 +41,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ courseId, onClose, on
         method: 'POST',
         body: JSON.stringify({
           rollNumber: form.rollNumber.trim().toUpperCase(),
-          name:       form.name.trim(),
-          email:      form.email?.trim() || undefined,
+          fullName:   form.fullName.trim(),
         }),
       });
       onAdded(created);
@@ -62,8 +61,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ courseId, onClose, on
         </div>
         <form className="modal-form" onSubmit={handleSubmit} noValidate>
           <Input label="Roll number" id="as-roll" placeholder="CS24B001" value={form.rollNumber} onChange={set('rollNumber')} disabled={loading} />
-          <Input label="Name" id="as-name" placeholder="Alice Johnson" value={form.name} onChange={set('name')} disabled={loading} />
-          <Input label="Email (optional)" type="email" id="as-email" placeholder="alice@college.edu" value={form.email ?? ''} onChange={set('email')} disabled={loading} />
+          <Input label="Full Name" id="as-name" placeholder="Alice Johnson" value={form.fullName} onChange={set('fullName')} disabled={loading} />
           {error && <p className="modal-error" role="alert">{error}</p>}
           <div className="modal-actions">
             <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
@@ -188,11 +186,11 @@ const CourseDetailPage: React.FC = () => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleDeleteStudent = async (studentId: string, name: string) => {
+  const handleDeleteStudent = async (studentId: string, fullName: string) => {
     try {
       await apiFetch<void>(`/students/${studentId}`, { method: 'DELETE' });
       setStudents((prev) => prev.filter((s) => s.id !== studentId));
-      info(`${name} removed`);
+      info(`${fullName} removed`);
     } catch (err) {
       toastError('Failed to remove student', err instanceof ApiError ? err.message : undefined);
     }
@@ -343,7 +341,6 @@ const CourseDetailPage: React.FC = () => {
                   <tr>
                     <th>Roll No.</th>
                     <th>Name</th>
-                    <th>Email</th>
                     <th aria-label="Actions" />
                   </tr>
                 </thead>
@@ -351,13 +348,12 @@ const CourseDetailPage: React.FC = () => {
                   {students.map((s) => (
                     <tr key={s.id}>
                       <td><code className="roll-no">{s.rollNumber}</code></td>
-                      <td>{s.name}</td>
-                      <td className="email-cell">{s.email ?? <span className="no-email">—</span>}</td>
+                      <td>{s.fullName}</td>
                       <td>
                         <button
                           className="student-delete-btn"
-                          onClick={() => handleDeleteStudent(s.id, s.name)}
-                          aria-label={`Remove ${s.name}`}
+                          onClick={() => handleDeleteStudent(s.id, s.fullName)}
+                          aria-label={`Remove ${s.fullName}`}
                         >
                           <Trash2 size={15} />
                         </button>
@@ -376,7 +372,7 @@ const CourseDetailPage: React.FC = () => {
         <AddStudentModal
           courseId={courseId!}
           onClose={() => setShowAdd(false)}
-          onAdded={(s) => { setStudents((prev) => [s, ...prev]); setShowAdd(false); success(`${s.name} added`); }}
+          onAdded={(s) => { setStudents((prev) => [s, ...prev]); setShowAdd(false); success(`${s.fullName} added`); }}
         />
       )}
       {showSession && (

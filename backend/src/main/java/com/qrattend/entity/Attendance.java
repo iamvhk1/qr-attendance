@@ -78,4 +78,11 @@ public class Attendance {
      */
     @Column(length = 64)
     private String currentNonce;
+
+    /**
+     * Timestamp of the last successfully accepted heartbeat.
+     * Used to enforce the 10-second recovery grace period: if a recoveryPing arrives
+     * and {@code Instant.now() - lastHeartbeatAt > 10s}, the ping is rejected.
+     */
+    private Instant lastHeartbeatAt;
 }

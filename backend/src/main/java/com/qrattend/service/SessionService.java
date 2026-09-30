@@ -2,6 +2,7 @@ package com.qrattend.service;
 
 import com.google.zxing.WriterException;
 import com.qrattend.dto.session.AttendanceResponse;
+import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.entity.Attendance;
@@ -153,8 +154,8 @@ public class SessionService {
      * @throws ForbiddenException        if the professor does not own the session
      */
     @Transactional(readOnly = true)
-    public byte[] getQrImageBytes(UUID sessionId, UUID professorId) {
-        String scanUrl = getQrUrl(sessionId, professorId);
+    public byte[] getQrImageBytes(UUID sessionId, UUID professorId, boolean congestionMode) {
+        String scanUrl = getQrUrl(sessionId, professorId, congestionMode);
         try {
             byte[] png = QrGenerator.generatePng(scanUrl, QR_SIZE_PX, QR_SIZE_PX);
             log.debug("QR PNG generated for session {}", sessionId);
@@ -166,10 +167,10 @@ public class SessionService {
     }
 
     /**
-     * Generates a fresh 15-second scan URL for the CLI to use natively.
+     * Generates a fresh scan URL for the CLI to use natively.
      */
     @Transactional(readOnly = true)
-    public String getQrUrl(UUID sessionId, UUID professorId) {
+    public String getQrUrl(UUID sessionId, UUID professorId, boolean congestionMode) {
         QrSession session = getOwnedSession(sessionId, professorId);
 
         if (session.isClosed()) {
@@ -177,9 +178,9 @@ public class SessionService {
                     "Cannot generate QR URL: session " + sessionId + " is closed or expired");
         }
 
-        String scanToken = jwtUtil.generateScanToken(sessionId);
+        String scanToken = jwtUtil.generateScanToken(sessionId, congestionMode);
         String scanUrl = frontendUrl + "/scan?token=" + scanToken;
-        log.debug("QR URL generated for session {} — expires in 15s", sessionId);
+        log.debug("QR URL generated for session {} — congestionMode={}", sessionId, congestionMode);
         
         return scanUrl;
     }
@@ -209,6 +210,9 @@ public class SessionService {
             throw new SessionClosedException("Session " + sessionId + " is already closed");
         }
 
+        // Set closedAt FIRST so computeExpectedHeartbeats can use it
+        session.setClosedAt(Instant.now());
+
         // Immediately finalise all PENDING attendance records.
         // Mirrors the scheduled coverage job so results are instant.
         List<Attendance> pending = attendanceRepository
@@ -219,7 +223,7 @@ public class SessionService {
             long actualHeartbeats = heartbeatRepository
                     .countBySessionIdAndRollNumber(sessionId, att.getRollNumber());
 
-            float coverage = (float) actualHeartbeats / expectedHeartbeats;
+            float coverage = Math.min(1.0f, (float) actualHeartbeats / expectedHeartbeats);
             att.setHeartbeatCoverage(coverage);
             att.setStatus(coverage >= COVERAGE_THRESHOLD
                     ? AttendanceStatus.CONFIRMED
@@ -230,7 +234,6 @@ public class SessionService {
             attendanceRepository.saveAll(pending);
         }
 
-        session.setClosedAt(Instant.now());
         QrSession saved = sessionRepository.save(session);
 
         log.info("Session {} manually closed by professor {} — finalised {} attendance record(s)",
@@ -239,7 +242,51 @@ public class SessionService {
         return SessionResponse.fromEntity(saved);
     }
 
+    // ── Extend ─────────────────────────────────────────────────
+
+    /**
+     * Extends a live session's expiry by the given number of seconds.
+     *
+     * <p>Increments {@code extendedCount} to track how many times the session was extended.
+     * Returns {@code 409 Conflict} if the session is already closed.</p>
+     *
+     * @param sessionId         the session UUID to extend
+     * @param professorId       the authenticated professor's UUID
+     * @param additionalSeconds seconds to add to the current {@code expiresAt}
+     * @return the updated session as a response DTO
+     */
+    @Transactional
+    public SessionResponse extendSession(UUID sessionId, UUID professorId, int additionalSeconds) {
+        QrSession session = getOwnedSession(sessionId, professorId);
+
+        if (session.isClosed()) {
+            throw new SessionClosedException("Session " + sessionId + " is already closed — cannot extend");
+        }
+
+        session.setExpiresAt(session.getExpiresAt().plus(additionalSeconds, ChronoUnit.SECONDS));
+        session.setExtendedCount(session.getExtendedCount() + 1);
+        QrSession saved = sessionRepository.save(session);
+
+        // Also push out the presenceEnd boundary for any students who already scanned in,
+        // otherwise they will accumulate more pings than expected, yielding > 100% coverage.
+        List<Attendance> pending = attendanceRepository.findBySessionIdAndStatus(sessionId, AttendanceStatus.PENDING);
+        for (Attendance att : pending) {
+            if (att.getPresenceEnd() != null) {
+                att.setPresenceEnd(att.getPresenceEnd().plus(additionalSeconds, ChronoUnit.SECONDS));
+            }
+        }
+        if (!pending.isEmpty()) {
+            attendanceRepository.saveAll(pending);
+        }
+
+        log.info("Session {} extended by {}s by professor {} (total extensions: {})",
+                sessionId, additionalSeconds, professorId, saved.getExtendedCount());
+
+        return SessionResponse.fromEntity(saved);
+    }
+
     // ── Attendance list ───────────────────────────────────────
+
 
     /**
      * Returns all attendance records for a session, ordered by scan time.
@@ -255,13 +302,51 @@ public class SessionService {
      */
     @Transactional(readOnly = true)
     public List<AttendanceResponse> listAttendance(UUID sessionId, UUID professorId) {
-        // Ownership check — ensures professors can't peek at each other's sessions
         getOwnedSession(sessionId, professorId);
 
         return attendanceRepository.findBySessionId(sessionId)
                 .stream()
                 .map(AttendanceResponse::fromEntity)
                 .toList();
+    }
+
+    // ── Manual Override ───────────────────────────────────────
+
+    /**
+     * Manually overrides an attendance record's status.
+     *
+     * <p>The professor can set any student's status to {@code CONFIRMED} or
+     * {@code INVALIDATED} with an optional reason. This is used to correct
+     * false negatives/positives caused by device issues or network problems.</p>
+     *
+     * <p>Ownership is validated by tracing {@code Attendance → Session → Course → Professor}.</p>
+     *
+     * @param attendanceId the UUID of the attendance record to override
+     * @param professorId  the authenticated professor's UUID
+     * @param request      contains the new status and an optional override reason
+     * @return the updated {@link AttendanceResponse}
+     */
+    @Transactional
+    public AttendanceResponse overrideAttendance(UUID attendanceId, UUID professorId, OverrideRequest request) {
+        Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found: " + attendanceId));
+
+        // Ownership check via session → course → professor
+        QrSession session = attendance.getSession();
+        if (!session.getCourse().getProfessor().getId().equals(professorId)) {
+            throw new ForbiddenException("You do not own the session this attendance belongs to");
+        }
+
+        AttendanceStatus newStatus = AttendanceStatus.valueOf(request.getStatus());
+        attendance.setStatus(newStatus);
+        attendance.setManuallyAdded(true);
+        attendance.setOverrideReason(request.getReason());
+
+        Attendance saved = attendanceRepository.save(attendance);
+        log.info("Attendance {} manually overridden to {} by professor {} — reason: {}",
+                attendanceId, newStatus, professorId, request.getReason());
+
+        return AttendanceResponse.fromEntity(saved);
     }
 
     // ── Internal helpers ─────────────────────────────────────
@@ -302,7 +387,12 @@ public class SessionService {
      */
     private long computeExpectedHeartbeats(Attendance att, QrSession session) {
         Instant start = att.getPresenceStart() != null ? att.getPresenceStart() : session.getCreatedAt();
-        Instant end   = att.getPresenceEnd()   != null ? att.getPresenceEnd()   : session.getExpiresAt();
+        Instant originalEnd = att.getPresenceEnd() != null ? att.getPresenceEnd() : session.getExpiresAt();
+        
+        // If the session was closed early, the presence window is truncated
+        Instant end = (session.getClosedAt() != null && session.getClosedAt().isBefore(originalEnd))
+                ? session.getClosedAt()
+                : originalEnd;
 
         long durationSeconds = ChronoUnit.SECONDS.between(start, end);
         long expected = (long) Math.ceil((double) durationSeconds / HEARTBEAT_INTERVAL_SECONDS);

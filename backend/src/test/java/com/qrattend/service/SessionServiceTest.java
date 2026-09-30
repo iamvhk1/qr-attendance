@@ -375,7 +375,7 @@ class SessionServiceTest {
                         "http://localhost:5173/scan?token=mock-scan-token", 300, 300))
                         .thenReturn(new byte[]{0, 1, 2, 3});
 
-                byte[] result = sessionService.getQrImageBytes(sessionId, profId);
+                byte[] result = sessionService.getQrImageBytes(sessionId, profId, false);
 
                 assertThat(result).isNotEmpty();
                 qrMock.verify(() ->
@@ -402,8 +402,8 @@ class SessionServiceTest {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
                         .thenReturn(new byte[]{0});
 
-                sessionService.getQrImageBytes(sessionId, profId);
-                sessionService.getQrImageBytes(sessionId, profId);
+                sessionService.getQrImageBytes(sessionId, profId, false);
+                sessionService.getQrImageBytes(sessionId, profId, false);
             }
 
             // generateScanToken must be called once per invocation — not cached
@@ -422,7 +422,7 @@ class SessionServiceTest {
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(expired));
 
-            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId))
+            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId, false))
                     .isInstanceOf(SessionClosedException.class)
                     .hasMessageContaining(sessionId.toString());
 
@@ -442,7 +442,7 @@ class SessionServiceTest {
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(closed));
 
-            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId))
+            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId, false))
                     .isInstanceOf(SessionClosedException.class);
 
             verifyNoInteractions(jwtUtil);
@@ -453,7 +453,7 @@ class SessionServiceTest {
         void throwsNotFoundWhenSessionAbsent() {
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId))
+            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId, false))
                     .isInstanceOf(ResourceNotFoundException.class);
         }
 
@@ -469,7 +469,7 @@ class SessionServiceTest {
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
 
-            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, otherProfId))
+            assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, otherProfId, false))
                     .isInstanceOf(ForbiddenException.class);
 
             verifyNoInteractions(jwtUtil);
@@ -492,7 +492,7 @@ class SessionServiceTest {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
                         .thenThrow(new IOException("disk full"));
 
-                assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId))
+                assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId, false))
                         .isInstanceOf(RuntimeException.class)
                         .hasMessageContaining("QR code");
             }
@@ -515,7 +515,7 @@ class SessionServiceTest {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
                         .thenThrow(new WriterException("encode error"));
 
-                assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId))
+                assertThatThrownBy(() -> sessionService.getQrImageBytes(sessionId, profId, false))
                         .isInstanceOf(RuntimeException.class)
                         .hasMessageContaining("QR code");
             }
@@ -538,7 +538,7 @@ class SessionServiceTest {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
                         .thenReturn(new byte[]{0});
 
-                sessionService.getQrImageBytes(sessionId, profId);
+                sessionService.getQrImageBytes(sessionId, profId, false);
 
                 // Verify the exact URL format passed to QrGenerator
                 qrMock.verify(() -> QrGenerator.generatePng(
@@ -564,7 +564,7 @@ class SessionServiceTest {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
                         .thenReturn(new byte[]{0});
 
-                sessionService.getQrImageBytes(sessionId, profId);
+                sessionService.getQrImageBytes(sessionId, profId, false);
             }
 
             // The rolling QR design: session must NOT be saved/updated on each QR fetch

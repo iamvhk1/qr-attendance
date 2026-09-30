@@ -15,5 +15,7 @@ public class HeartbeatRequest {
     @NotBlank(message = "Nonce is required")
     private String nonce;
 
+    /** True if navigator.webdriver is set — automated browser detection. */
     private boolean webdriver;
+
 }

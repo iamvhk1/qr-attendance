@@ -53,10 +53,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/courses/**").hasRole("PROFESSOR")
                 .requestMatchers("/api/students/**").hasRole("PROFESSOR")
                 .requestMatchers("/api/sessions/**").hasRole("PROFESSOR")
+                .requestMatchers("/api/reports/**").hasRole("PROFESSOR")
                 // Scan token protected
                 .requestMatchers("/api/student/scan").hasRole("SCAN")
                 .requestMatchers("/api/student/heartbeat").hasRole("ATTENDANCE")
-                .requestMatchers("/api/student/doubt").hasRole("SCAN")
+                .requestMatchers("/api/student/doubt").hasRole("ATTENDANCE")
                 // Any other request must be authenticated
                 .anyRequest().authenticated()
             );

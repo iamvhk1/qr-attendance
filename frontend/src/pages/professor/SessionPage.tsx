@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square } from 'lucide-react';
+import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square, Plus, PenLine, X } from 'lucide-react';
 import { Card, CardHeader, CardBody, Button, Badge, Loader } from '../../components/ui';
 import { apiFetch, ApiError } from '../../lib/api';
 import { useToast } from '../../hooks/useToast';
@@ -60,6 +60,74 @@ const CountdownRing: React.FC<CountdownRingProps> = ({ secondsLeft, totalSeconds
   );
 };
 
+// ── Override Modal ────────────────────────────────────────────────
+
+interface OverrideModalProps {
+  record: AttendanceResponse;
+  onClose: () => void;
+  onSaved: (updated: AttendanceResponse) => void;
+}
+
+const OverrideModal: React.FC<OverrideModalProps> = ({ record, onClose, onSaved }) => {
+  const [status, setStatus] = useState<'CONFIRMED' | 'INVALIDATED'>(record.status === 'CONFIRMED' ? 'CONFIRMED' : 'INVALIDATED');
+  const [reason, setReason] = useState(record.overrideReason ?? '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const handleSave = async () => {
+    setSaving(true);
+    setErr('');
+    try {
+      const updated = await apiFetch<AttendanceResponse>(
+        `/sessions/attendance/${record.id}/override`,
+        { method: 'PATCH', body: JSON.stringify({ status, reason }) },
+      );
+      onSaved(updated);
+    } catch (e: unknown) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to save override');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Override attendance">
+      <div className="modal-box">
+        <div className="modal-header">
+          <h3>Override Attendance</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="modal-body">
+          <p className="override-student">
+            <strong>{record.studentName}</strong> &mdash; <code>{record.rollNumber}</code>
+          </p>
+          <div className="modal-field">
+            <label>New Status</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value as 'CONFIRMED' | 'INVALIDATED')}>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="INVALIDATED">Invalidated</option>
+            </select>
+          </div>
+          <div className="modal-field">
+            <label>Reason (optional)</label>
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Device issue, network drop..."
+            />
+          </div>
+          {err && <p className="modal-error">{err}</p>}
+        </div>
+        <div className="modal-footer">
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} loading={saving}>Save Override</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Attendance Table ──────────────────────────────────────────────
 
 const STATUS_CONFIG = {
@@ -70,9 +138,10 @@ const STATUS_CONFIG = {
 
 interface AttendanceTableProps {
   records: AttendanceResponse[];
+  onOverride: (record: AttendanceResponse) => void;
 }
 
-const AttendanceTable: React.FC<AttendanceTableProps> = ({ records }) => {
+const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, onOverride }) => {
   if (records.length === 0) {
     return (
       <div className="attendance-empty">
@@ -109,6 +178,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records }) => {
               <th>Status</th>
               <th>Scanned At</th>
               <th>Coverage</th>
+              <th aria-label="Override" />
             </tr>
           </thead>
           <tbody>
@@ -130,6 +200,16 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records }) => {
                       ? `${(r.heartbeatCoverage * 100).toFixed(0)}%`
                       : <span className="no-coverage">—</span>}
                   </td>
+                  <td>
+                    <button
+                      className="override-btn"
+                      title="Override attendance"
+                      aria-label={`Override ${r.studentName}`}
+                      onClick={() => onOverride(r)}
+                    >
+                      <PenLine size={14} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -142,28 +222,34 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records }) => {
 
 // ── Main Page ─────────────────────────────────────────────────────
 
-const QR_POLL_MS   = 14_000;  // refresh QR every 14s (embedded JWT expires at 15s)
+const QR_POLL_MS   = 14_000;  // refresh QR every 14s (embedded JWT expires at 20s)
 const SESS_POLL_MS = 5_000;   // check session status every 5s
 const ATT_POLL_MS  = 5_000;   // refresh attendance every 5s
+const EXTEND_SECS  = 60;      // seconds added per "Extend" click
 
 const SessionPage: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const { toasts, removeToast, error: toastError, success } = useToast();
 
-  const [session, setSession]       = useState<SessionResponse | null>(null);
-  const [qrUrl, setQrUrl]           = useState<string | null>(null);
-  const [attendance, setAttendance] = useState<AttendanceResponse[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [qrOffline, setQrOffline]   = useState(false);
-  const [closing, setClosing]       = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [session, setSession]           = useState<SessionResponse | null>(null);
+  const [qrUrl, setQrUrl]               = useState<string | null>(null);
+  const [attendance, setAttendance]     = useState<AttendanceResponse[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [qrOffline, setQrOffline]       = useState(false);
+  const [closing, setClosing]           = useState(false);
+  const [extending, setExtending]       = useState(false);
+  const [secondsLeft, setSecondsLeft]   = useState(0);
+  const [overrideTarget, setOverrideTarget] = useState<AttendanceResponse | null>(null);
+  const [usingSse, setUsingSse]         = useState(false);
+  const [congestionMode, setCongestionMode] = useState(false);
 
   const qrIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionRef      = useRef<SessionResponse | null>(null);
+  const sseRef          = useRef<EventSource | null>(null);
 
   // ── Helpers ──
 
@@ -171,6 +257,7 @@ const SessionPage: React.FC = () => {
     [qrIntervalRef, sessIntervalRef, attIntervalRef, tickRef].forEach((r) => {
       if (r.current) { clearInterval(r.current); r.current = null; }
     });
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
   };
 
   const computeSecondsLeft = (s: SessionResponse): number =>
@@ -181,7 +268,7 @@ const SessionPage: React.FC = () => {
   const fetchQr = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const data = await apiFetch<QrDataResponse>(`/sessions/${sessionId}/qr-data`);
+      const data = await apiFetch<QrDataResponse>(`/sessions/${sessionId}/qr-data?congestion=${congestionMode}`);
       setQrUrl(data.url);
       setQrOffline(false);
     } catch (err) {
@@ -194,7 +281,7 @@ const SessionPage: React.FC = () => {
         setQrOffline(true);
       }
     }
-  }, [sessionId]);
+  }, [sessionId, congestionMode]);
 
   // ── Session poll ──
 
@@ -227,10 +314,10 @@ const SessionPage: React.FC = () => {
     fetchSession();
     fetchAttendance();
 
-    if (!qrIntervalRef.current)   qrIntervalRef.current   = setInterval(fetchQr,        QR_POLL_MS);
+    if (!qrIntervalRef.current)   qrIntervalRef.current   = setInterval(fetchQr, congestionMode ? 19_000 : 14_000);
     if (!sessIntervalRef.current) sessIntervalRef.current = setInterval(fetchSession,    SESS_POLL_MS);
     if (!attIntervalRef.current)  attIntervalRef.current  = setInterval(fetchAttendance, ATT_POLL_MS);
-  }, [fetchQr, fetchSession, fetchAttendance]);
+  }, [fetchQr, fetchSession, fetchAttendance, congestionMode]);
 
   // ── Mount: initial load + start polling ──
 
@@ -281,6 +368,15 @@ const SessionPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // ── Dynamic QR Interval ──
+  // Re-adjust QR polling interval dynamically when congestionMode changes
+  useEffect(() => {
+    if (sessionRef.current?.status === 'LIVE' && !document.hidden && !closing) {
+      if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
+      qrIntervalRef.current = setInterval(fetchQr, congestionMode ? 19_000 : 14_000);
+    }
+  }, [congestionMode, fetchQr, closing]);
+
   // ── Close session handler ──
 
   const handleClose = async () => {
@@ -292,12 +388,10 @@ const SessionPage: React.FC = () => {
       setSession(s);
       clearAllIntervals();
       success('Session closed', 'All attendance has been finalised.');
-      // Fetch final attendance
       const records = await apiFetch<AttendanceResponse[]>(`/sessions/${sessionId}/attendance`);
       setAttendance(records);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        // Already closed
         const s = await apiFetch<SessionResponse>(`/sessions/${sessionId}`).catch(() => null);
         if (s) { sessionRef.current = s; setSession(s); clearAllIntervals(); }
       } else {
@@ -307,6 +401,84 @@ const SessionPage: React.FC = () => {
       setClosing(false);
     }
   };
+
+  // ── Extend session handler ──
+
+  const handleExtend = async () => {
+    if (!sessionId || extending) return;
+    setExtending(true);
+    try {
+      const s = await apiFetch<SessionResponse>(
+        `/sessions/${sessionId}/extend`,
+        { method: 'PATCH', body: JSON.stringify({ additionalSeconds: EXTEND_SECS }) },
+      );
+      sessionRef.current = s;
+      setSession(s);
+      setSecondsLeft(computeSecondsLeft(s));
+      success(`Session extended by ${EXTEND_SECS}s`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        toastError('Session already closed');
+      } else {
+        toastError('Failed to extend session', err instanceof ApiError ? err.message : undefined);
+      }
+    } finally {
+      setExtending(false);
+    }
+  };
+
+  // ── SSE connection (with polling fallback) ──
+
+  const startSse = useCallback((id: string) => {
+    if (!('EventSource' in window)) {
+      // Browser doesn't support SSE — fall back to polling
+      return false;
+    }
+    const token = localStorage.getItem('professor_token');
+    // EventSource doesn't support custom headers; use URL-param token for SSE
+    // (backend should accept ?token= as a fallback for SSE auth)
+    const es = new EventSource(`/api/sessions/${id}/stream?token=${token ?? ''}`);
+    let connected = false;
+
+    es.onopen = () => { connected = true; setUsingSse(true); };
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.status === 'CLOSED') {
+          setSession((prev) => prev ? { ...prev, status: 'CLOSED' } : prev);
+          clearAllIntervals();
+          return;
+        }
+        // Update session expiresAt from stream to keep countdown accurate
+        if (data.expiresAt && sessionRef.current) {
+          const updated = { ...sessionRef.current, expiresAt: data.expiresAt };
+          sessionRef.current = updated;
+          setSession(updated);
+        }
+        // Update attendance counts if stream provides them
+        if (data.attendance) setAttendance(data.attendance);
+      } catch { /* malformed event, ignore */ }
+    };
+
+    es.onerror = () => {
+      es.close();
+      sseRef.current = null;
+      setUsingSse(false);
+      if (!connected) {
+        // Failed to connect — network/proxy blocking SSE, fall back to polling
+        return;
+      }
+      // Was connected and dropped — retry polling
+      if (sessionRef.current?.status === 'LIVE') startPolling();
+    };
+
+    sseRef.current = es;
+    return true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
 
   // ── Render ──
 
@@ -336,7 +508,7 @@ const SessionPage: React.FC = () => {
       {/* Status banner */}
       <div className={`session-status-bar ${isLive ? 'status-live' : 'status-closed'}`}>
         {isLive ? (
-          <><span className="status-dot" aria-hidden="true" />Session is LIVE</>
+          <><span className="status-dot" aria-hidden="true" />Session is LIVE{usingSse && <span className="sse-badge">SSE</span>}</>
         ) : (
           <>Session CLOSED</>
         )}
@@ -394,16 +566,47 @@ const SessionPage: React.FC = () => {
                     closing={isTimerZero}
                   />
 
-                  <Button
-                    variant="danger"
-                    leftIcon={<Square size={16} />}
-                    loading={closing}
-                    onClick={handleClose}
-                    className="close-session-btn"
-                    id="close-session-btn"
-                  >
-                    End Session Early
-                  </Button>
+                  <div className="session-action-row">
+                    <Button
+                      variant="ghost"
+                      leftIcon={<Plus size={16} />}
+                      loading={extending}
+                      onClick={handleExtend}
+                      disabled={closing}
+                      id="extend-session-btn"
+                    >
+                      Extend +60s
+                    </Button>
+                    <Button
+                      variant="danger"
+                      leftIcon={<Square size={16} />}
+                      loading={closing}
+                      onClick={handleClose}
+                      className="close-session-btn"
+                      id="close-session-btn"
+                      disabled={extending}
+                    >
+                      End Session Early
+                    </Button>
+                  </div>
+                  <div className="congestion-toggle">
+                    <label>
+                      <input 
+                        type="checkbox" 
+                        checked={congestionMode}
+                        onChange={(e) => {
+                          setCongestionMode(e.target.checked);
+                          // We need to immediately fetch a new QR so the token has the correct expiry
+                          if (sessionId && !qrOffline && !closing) {
+                             apiFetch<QrDataResponse>(`/sessions/${sessionId}/qr-data?congestion=${e.target.checked}`)
+                               .then(data => setQrUrl(data.url))
+                               .catch(() => {});
+                          }
+                        }}
+                      />
+                      Slow Network Mode (20s QR)
+                    </label>
+                  </div>
                 </>
               ) : (
                 <div className="session-closed-state">
@@ -424,12 +627,25 @@ const SessionPage: React.FC = () => {
             action={isLive ? <span className="live-indicator"><span className="live-dot" aria-hidden="true" />Live</span> : undefined}
           />
           <CardBody>
-            <AttendanceTable records={attendance} />
+            <AttendanceTable records={attendance} onOverride={setOverrideTarget} />
           </CardBody>
         </Card>
       </div>
 
       <ToastViewport toasts={toasts} onRemove={removeToast} />
+
+      {/* Override modal */}
+      {overrideTarget && (
+        <OverrideModal
+          record={overrideTarget}
+          onClose={() => setOverrideTarget(null)}
+          onSaved={(updated) => {
+            setAttendance((prev) => prev.map((r) => r.id === updated.id ? updated : r));
+            setOverrideTarget(null);
+            success('Override saved');
+          }}
+        />
+      )}
     </section>
   );
 };

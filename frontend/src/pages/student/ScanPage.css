@@ -1,0 +1,598 @@
+/* ────────────────────────────────────────────────────────────────
+   ScanPage — Mobile-first student presence UI
+   Target: narrow phone screens (320px – 430px)
+   ──────────────────────────────────────────────────────────────── */
+
+/* ── Root / backdrop ──────────────────────────────────────────── */
+
+.scan-root {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--bg-canvas);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ambient glow orbs */
+.scan-orb {
+  position: absolute;
+  border-radius: var(--radius-full);
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scan-orb-1 {
+  width: 340px; height: 340px;
+  top: -120px; right: -80px;
+  background: hsl(158 68% 44% / 0.12);
+}
+.scan-orb-2 {
+  width: 260px; height: 260px;
+  bottom: -80px; left: -60px;
+  background: hsl(217 91% 60% / 0.1);
+}
+
+/* ── Card ─────────────────────────────────────────────────────── */
+
+.scan-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top accent bar */
+.scan-card::before {
+  content: '';
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-400), var(--primary-400));
+  width: 100%;
+  flex-shrink: 0;
+}
+
+/* ── Card Header ─────────────────────────────────────────────── */
+
+.scan-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.scan-card__logo {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--accent-900);
+  border: 1px solid hsl(158 68% 44% / 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-400);
+  flex-shrink: 0;
+}
+
+.scan-card__title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.scan-card__sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Live / offline connection badge (top-right) */
+.scan-conn-badge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+.scan-conn-badge--online {
+  background: hsl(158 68% 44% / 0.15);
+  color: var(--accent-400);
+  border: 1px solid hsl(158 68% 44% / 0.25);
+}
+.scan-conn-badge--offline {
+  background: hsl(3 92% 60% / 0.12);
+  color: var(--danger-400);
+  border: 1px solid hsl(3 92% 60% / 0.25);
+}
+
+.conn-dot {
+  width: 6px; height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-400);
+  animation: pulse-ring 1.2s ease-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Card Body ────────────────────────────────────────────────── */
+
+.scan-card__body {
+  padding: var(--space-6) var(--space-5);
+  flex: 1;
+}
+
+/* ── Card Footer ─────────────────────────────────────────────── */
+
+.scan-card__footer {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+/* ── State containers ────────────────────────────────────────── */
+
+.scan-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+  min-height: 260px;
+  justify-content: center;
+}
+
+.scan-state__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.scan-state__title--success { color: var(--accent-400); }
+.scan-state__title--danger  { color: var(--danger-400); }
+
+.scan-state__msg {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 320px;
+  margin: 0;
+}
+.scan-state__sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── ENTER_ROLL — form ───────────────────────────────────────── */
+
+.scan-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+}
+
+.scan-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.scan-form__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.scan-form__input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+  outline: none;
+  box-sizing: border-box;
+}
+.scan-form__input:focus {
+  border-color: var(--accent-400);
+  box-shadow: 0 0 0 3px hsl(158 68% 44% / 0.18);
+}
+.scan-form__input--error {
+  border-color: var(--danger-400);
+}
+.scan-form__input--error:focus {
+  box-shadow: 0 0 0 3px hsl(3 92% 60% / 0.18);
+}
+
+.scan-form__error {
+  font-size: 0.75rem;
+  color: var(--danger-400);
+  margin: 0;
+}
+
+/* Submit button — full width, accent colour */
+.scan-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: var(--accent-500);
+  color: hsl(0 0% 4%);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration-fast), transform var(--duration-fast), opacity var(--duration-fast);
+}
+.scan-submit-btn:hover:not(:disabled) {
+  background: var(--accent-400);
+  transform: translateY(-1px);
+}
+.scan-submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.scan-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Retry button (error state) */
+.scan-retry-btn {
+  padding: var(--space-2) var(--space-5);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color var(--duration-fast), color var(--duration-fast);
+}
+.scan-retry-btn:hover {
+  border-color: var(--accent-400);
+  color: var(--accent-400);
+}
+
+/* ── SCANNING — spinner ──────────────────────────────────────── */
+
+.spin-icon {
+  color: var(--accent-400);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── PRESENT — pulse icon ────────────────────────────────────── */
+
+.present-pulse-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100px; height: 100px;
+}
+
+.present-pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: hsl(158 68% 44% / 0.15);
+  animation: present-pulse 2s ease-out infinite;
+}
+
+@keyframes present-pulse {
+  0%   { transform: scale(0.8); opacity: 0.8; }
+  70%  { transform: scale(1.35); opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.present-icon {
+  position: relative;
+  color: var(--accent-400);
+  filter: drop-shadow(0 0 12px hsl(158 68% 44% / 0.6));
+}
+
+/* ── Heartbeat ring ──────────────────────────────────────────── */
+
+.hb-ring {
+  width: 96px; height: 96px;
+  border-radius: var(--radius-full);
+  border: 3px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.4s;
+}
+.hb-ring--active {
+  border-color: var(--accent-400);
+  box-shadow: 0 0 0 4px hsl(158 68% 44% / 0.15);
+  animation: hb-pulse 1s ease-out infinite;
+}
+
+@keyframes hb-pulse {
+  0%   { box-shadow: 0 0 0 0   hsl(158 68% 44% / 0.35); }
+  70%  { box-shadow: 0 0 0 12px hsl(158 68% 44% / 0); }
+  100% { box-shadow: 0 0 0 0   hsl(158 68% 44% / 0); }
+}
+
+.hb-ring__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.hb-ring__count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.hb-ring__label {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Coverage bar ────────────────────────────────────────────── */
+
+.coverage-bar-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.coverage-bar-track {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.coverage-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.5s ease, background 0.5s ease;
+}
+
+.coverage-bar-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+/* ── Connectivity banners ────────────────────────────────────── */
+
+.scan-offline-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--danger-400);
+  background: hsl(3 92% 60% / 0.1);
+  border: 1px solid hsl(3 92% 60% / 0.25);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.scan-online-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--accent-400);
+}
+
+/* ── CONFIRMED ───────────────────────────────────────────────── */
+
+.confirmed-icon {
+  color: var(--accent-400);
+  filter: drop-shadow(0 0 16px hsl(158 68% 44% / 0.7));
+  animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.confirmed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent-900);
+  border: 1px solid hsl(158 68% 44% / 0.3);
+  border-radius: var(--radius-full);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent-400);
+}
+
+/* ── INVALIDATED / ERROR ─────────────────────────────────────── */
+
+.invalid-icon,
+.error-icon {
+  color: var(--danger-400);
+  filter: drop-shadow(0 0 12px hsl(3 92% 60% / 0.5));
+  animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* ── Utility animations ──────────────────────────────────────── */
+
+@keyframes pop-in {
+  from { transform: scale(0.5); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* anim-fade-in-scale defined in index.css — re-declare locally as fallback */
+.anim-fade-in-scale {
+  animation: fade-in-scale 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* ── Doubt FAB ───────────────────────────────────────────────── */
+
+.doubt-fab {
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 20px hsl(220 30% 5% / 0.4);
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+  z-index: 100;
+}
+.doubt-fab:hover {
+  background: var(--accent-900);
+  color: var(--accent-400);
+  border-color: hsl(158 68% 44% / 0.4);
+  transform: translateY(-2px);
+}
+
+/* ── Doubt Modal ─────────────────────────────────────────────── */
+
+.doubt-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: hsl(220 30% 5% / 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 150;
+  padding-bottom: var(--space-6);
+}
+
+.doubt-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 420px;
+  margin: 0 var(--space-4);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  animation: scaleInUp 0.2s ease;
+  box-shadow: 0 -8px 40px hsl(220 30% 5% / 0.5);
+}
+
+@keyframes scaleInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.doubt-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.doubt-modal__header button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px;
+  display: flex;
+  transition: color 0.15s;
+}
+.doubt-modal__header button:hover { color: var(--text-primary); }
+
+.doubt-textarea {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  padding: var(--space-3);
+  resize: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.doubt-textarea:focus {
+  outline: none;
+  border-color: var(--accent-400);
+}
+
+.doubt-submit-btn {
+  background: var(--accent-600, hsl(158 60% 40%));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: opacity 0.15s;
+}
+.doubt-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.doubt-submit-btn:not(:disabled):hover { opacity: 0.85; }
+
+.doubt-sent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  color: var(--accent-400);
+  text-align: center;
+}
+.doubt-sent p { margin: 0; font-size: 0.9rem; }
+
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -322,7 +322,7 @@ class SessionControllerTest {
         @Test
         @DisplayName("Returns 200 with Content-Type: image/png for a live session")
         void returns200WithImagePngContentType() throws Exception {
-            given(sessionService.getQrImageBytes(sessionId, profId)).willReturn(FAKE_PNG);
+            given(sessionService.getQrImageBytes(sessionId, profId, false)).willReturn(FAKE_PNG);
 
             mockMvc.perform(get("/api/sessions/" + sessionId + "/qr"))
                     .andExpect(status().isOk())
@@ -332,7 +332,7 @@ class SessionControllerTest {
         @Test
         @DisplayName("Response body is the raw PNG bytes returned by the service")
         void responseBodyContainsPngBytes() throws Exception {
-            given(sessionService.getQrImageBytes(sessionId, profId)).willReturn(FAKE_PNG);
+            given(sessionService.getQrImageBytes(sessionId, profId, false)).willReturn(FAKE_PNG);
 
             byte[] body = mockMvc.perform(get("/api/sessions/" + sessionId + "/qr"))
                     .andExpect(status().isOk())
@@ -346,7 +346,7 @@ class SessionControllerTest {
         @Test
         @DisplayName("Returns 409 Conflict when session is closed or expired")
         void returns409WhenSessionClosed() throws Exception {
-            given(sessionService.getQrImageBytes(sessionId, profId))
+            given(sessionService.getQrImageBytes(sessionId, profId, false))
                     .willThrow(new SessionClosedException(
                             "Cannot generate QR: session " + sessionId + " is closed or expired"));
 
@@ -357,7 +357,7 @@ class SessionControllerTest {
         @Test
         @DisplayName("Returns 404 when session does not exist")
         void returns404WhenSessionNotFound() throws Exception {
-            given(sessionService.getQrImageBytes(sessionId, profId))
+            given(sessionService.getQrImageBytes(sessionId, profId, false))
                     .willThrow(new ResourceNotFoundException("Session not found: " + sessionId));
 
             mockMvc.perform(get("/api/sessions/" + sessionId + "/qr"))
@@ -367,7 +367,7 @@ class SessionControllerTest {
         @Test
         @DisplayName("Returns 403 when professor does not own the session")
         void returns403WhenNotOwner() throws Exception {
-            given(sessionService.getQrImageBytes(sessionId, profId))
+            given(sessionService.getQrImageBytes(sessionId, profId, false))
                     .willThrow(new ForbiddenException("You do not own session " + sessionId));
 
             mockMvc.perform(get("/api/sessions/" + sessionId + "/qr"))
@@ -384,7 +384,7 @@ class SessionControllerTest {
         @Test
         @DisplayName("Returns 500 when QR generation fails (IOException → RuntimeException)")
         void returns500WhenQrGenerationFails() throws Exception {
-            given(sessionService.getQrImageBytes(sessionId, profId))
+            given(sessionService.getQrImageBytes(sessionId, profId, false))
                     .willThrow(new RuntimeException("Failed to generate QR code",
                             new java.io.IOException("disk full")));
 

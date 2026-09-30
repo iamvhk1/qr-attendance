@@ -1,6 +1,8 @@
 package com.qrattend.controller;
 
 import com.qrattend.dto.session.AttendanceResponse;
+import com.qrattend.dto.session.ExtendRequest;
+import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.service.SessionService;
@@ -84,9 +86,11 @@ public class SessionController {
      * @return 200 OK with raw {@code image/png} bytes
      */
     @GetMapping(value = "/{id}/qr", produces = MediaType.IMAGE_PNG_VALUE)
-    public ResponseEntity<byte[]> getQrImage(@PathVariable UUID id) {
+    public ResponseEntity<byte[]> getQrImage(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "false") boolean congestion) {
         UUID professorId = getProfessorId();
-        byte[] png = sessionService.getQrImageBytes(id, professorId);
+        byte[] png = sessionService.getQrImageBytes(id, professorId, congestion);
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_PNG)
                 .body(png);
@@ -99,9 +103,11 @@ public class SessionController {
      * Useful for CLI clients that render ASCII QR codes natively.
      */
     @GetMapping("/{id}/qr-data")
-    public ResponseEntity<com.qrattend.dto.session.QrDataResponse> getQrData(@PathVariable UUID id) {
+    public ResponseEntity<com.qrattend.dto.session.QrDataResponse> getQrData(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "false") boolean congestion) {
         UUID professorId = getProfessorId();
-        String url = sessionService.getQrUrl(id, professorId);
+        String url = sessionService.getQrUrl(id, professorId, congestion);
         return ResponseEntity.ok(new com.qrattend.dto.session.QrDataResponse(url));
     }
 
@@ -121,6 +127,47 @@ public class SessionController {
         UUID professorId = getProfessorId();
         SessionResponse closed = sessionService.closeSession(id, professorId);
         return ResponseEntity.ok(closed);
+    }
+
+    // ── PATCH /api/sessions/{id}/extend ──────────────────────
+
+    /**
+     * Extends the session's expiry window by the given number of seconds.
+     *
+     * <p>Request body: {@code { "additionalSeconds": 60 }} (optional — defaults to 60).<br>
+     * Returns {@code 409 Conflict} if the session is already closed.</p>
+     *
+     * @return 200 OK with the updated {@link SessionResponse} (new {@code expiresAt})
+     */
+    @PatchMapping("/{id}/extend")
+    public ResponseEntity<SessionResponse> extendSession(
+            @PathVariable UUID id,
+            @Valid @RequestBody(required = false) ExtendRequest request) {
+        UUID professorId = getProfessorId();
+        int seconds = (request != null) ? request.getAdditionalSeconds() : 60;
+        SessionResponse extended = sessionService.extendSession(id, professorId, seconds);
+        return ResponseEntity.ok(extended);
+    }
+
+    // ── PATCH /api/sessions/attendance/{id}/override ─────────
+
+    /**
+     * Manually overrides a student's attendance status.
+     *
+     * <p>Request body: {@code { "status": "CONFIRMED" | "INVALIDATED", "reason": "..." }}<br>
+     * Validates professor ownership via the attendance record → session → course → professor chain.
+     * Returns {@code 404} if the attendance record does not exist, {@code 403} if the professor
+     * does not own the associated session.</p>
+     *
+     * @return 200 OK with the updated {@link AttendanceResponse}
+     */
+    @PatchMapping("/attendance/{attendanceId}/override")
+    public ResponseEntity<AttendanceResponse> overrideAttendance(
+            @PathVariable UUID attendanceId,
+            @Valid @RequestBody OverrideRequest request) {
+        UUID professorId = getProfessorId();
+        AttendanceResponse updated = sessionService.overrideAttendance(attendanceId, professorId, request);
+        return ResponseEntity.ok(updated);
     }
 
     // ── GET /api/sessions/{id}/attendance ────────────────────

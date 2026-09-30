@@ -2,15 +2,13 @@
 export interface StudentResponse {
   id: string;
   rollNumber: string;
-  name: string;
-  email: string | null;
+  fullName: string;
 }
 
 /** Mirrors StudentRequest.java */
 export interface StudentRequest {
   rollNumber: string;
-  name: string;
-  email?: string;
+  fullName: string;
 }
 
 /** Mirrors RosterSyncReport.java */

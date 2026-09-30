@@ -1,0 +1,136 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tabularx}
+
+\title{\textbf{CS5013 Project Design Document}\\QR-Based Classroom Attendance System}
+\author{Harsha Karthikeya Vutukuri, CS24B075}
+\date{September 11, 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Architecture Note}
+
+\subsection{System Overview}
+The QR-Based Classroom Attendance System follows a modern client-server architecture. The backend provides a RESTful API and Server-Sent Events (SSE) for real-time updates, built using Java and Spring Boot. The frontend is a Single Page Application (SPA) built with React and Vite. The system interacts with a relational database (H2 for local development, Supabase PostgreSQL for production) using Spring Data JPA.
+
+\subsection{Module Split}
+The system is logically divided into the following key modules:
+
+\begin{itemize}
+    \item \textbf{Frontend Module (React + Vite)}
+    \begin{itemize}
+        \item \textbf{Professor Dashboard:} Handles authentication, course management, student roster upload, and session monitoring.
+        \item \textbf{Student Scan Interface:} A lightweight, mobile-responsive page where students scan the QR code and submit their attendance. Includes a \textbf{Presence Verification UI} that uses the Page Visibility API and Screen Wake Lock API to enforce a dwell-time countdown.
+    \end{itemize}
+    
+    \item \textbf{Backend Core (Spring Boot)}
+    \begin{itemize}
+        \item \textbf{Security \& Auth Module:} Manages Professor authentication using JWT (JSON Web Tokens). Includes filters to secure endpoints.
+        \item \textbf{Course \& Student Management Module:} Handles CRUD operations for courses and students. Integrates Apache POI for Excel-based roster imports.
+        \item \textbf{QR \& Session Management Module:} The critical path for attendance. Generates short-lived, rolling JWTs embedded in QR codes via ZXing. Manages active sessions and tracks manual overrides.
+        \item \textbf{Presence Verification Engine:} A heartbeat anti-cheat system. Tracks periodic pings from student devices, managing cryptographic nonces and computing heartbeat coverage to transition attendance status from PENDING to CONFIRMED or INVALIDATED.
+        \item \textbf{Reporting Module:} Generates PDF summaries (via Flying Saucer + Thymeleaf) and Excel exports for completed sessions.
+    \end{itemize}
+    
+    \item \textbf{Database Layer}
+    \begin{itemize}
+        \item \textbf{Persistence Module:} Entity models (Professor, Course, Student, QrSession, Attendance, Doubt) and JPA Repositories for data access.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Interfaces}
+Communication between the frontend and backend occurs primarily over HTTP:
+\begin{itemize}
+    \item \textbf{RESTful JSON APIs:} Endpoints for authentication (\texttt{/api/auth/*}), course and student management (\texttt{/api/courses/*}, \texttt{/api/students/*}), and session controls (\texttt{/api/sessions/*}).
+    \item \textbf{Server-Sent Events (SSE):} The \texttt{/api/sessions/\{id\}/stream} endpoint pushes real-time updates (like time remaining and live attendance counts) from the backend to the Professor Dashboard.
+    \item \textbf{Stateless Token Interface:} The Student Scan Interface interacts with the backend by parsing the short-lived JWT from the QR URL and sending it as proof of presence to the \texttt{POST /api/sessions/scan} endpoint.
+    \item \textbf{Heartbeat Polling Interface:} Following a successful scan, the student's browser repeatedly hits \texttt{POST /api/scan/heartbeat} every 5 seconds, exchanging a rotating cryptographic nonce to prove continued active presence.
+\end{itemize}
+
+\section{Test Plan}
+
+The testing strategy encompasses unit, integration, and end-to-end testing across modules.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Module} & \textbf{Test Scenario} \\
+\hline
+\textbf{Security \& Auth} & Verify that accessing protected endpoints (e.g., \texttt{/api/courses}) without a valid JWT returns a \texttt{401 Unauthorized} response, and valid login issues a correct token. \\
+\hline
+\textbf{Course/Student Management} & Mid-semester roster sync test: Upload an Excel sheet where 2 students are added and 2 are removed; verify new students are marked absent for past sessions and removed students disappear from reports. \\
+\hline
+\textbf{QR \& Session Mgmt} & 15-second Rolling Token expiry: Simulate a student sharing the URL. Ensure that a request submitted with a token older than 15 seconds is strictly rejected by the server. \\
+\hline
+\textbf{Session Controller (Concurrency)} & Load test the \texttt{POST /api/sessions/scan} endpoint with 30 concurrent requests (using JMeter or a script) to ensure no race conditions occur when updating the session's attendance count. \\
+\hline
+\textbf{Presence Verification Engine} & Submit a heartbeat ping with an outdated nonce or a payload indicating \texttt{navigator.webdriver=true}. Verify that the server rejects the request with a \texttt{400 Bad Request} and marks the attendance as \texttt{INVALIDATED} if coverage falls below 80\%. \\
+\hline
+\textbf{Reporting} & Verify that the Excel (.xlsx) export opens without encoding errors and accurately reflects manual override flags vs. QR scan data. \\
+\hline
+\textbf{Frontend (Dashboard)} & Ensure that the SSE live timer correctly counts down on the UI and that the "Extend Session" button successfully adds time to the backend session. \\
+\hline
+\end{tabularx}
+\end{center}
+
+\section{Milestone Plan}
+
+\textit{Revised considering scoping feedback to ensure achievable increments.}
+
+\begin{itemize}
+    \item \textbf{Milestone 1: Foundation \& Setup (By Sep 25, 2026)}
+    \begin{itemize}
+        \item Database schema finalised and all JPA entities (Professor, Course, Student, Session) created.
+        \item JWT authentication operational (login + protected endpoints).
+        \item Basic CRUD for courses and students, including Excel file parsing for roster imports.
+    \end{itemize}
+    \item \textbf{Milestone 2: Core QR Workflow (Mid-Demo, Oct 9, 2026)}
+    \begin{itemize}
+        \item Integration of ZXing for dynamic QR code generation.
+        \item Implementation of the 15-second rolling JWT validation for attendance submission.
+        \item Presence Verification Engine (heartbeat endpoint, nonce rotation, coverage computation).
+        \item Functional Student Scan Interface (React) with dwell-time countdown, and basic Professor Dashboard.
+        \item SSE live timer stream and manual attendance override working.
+        \item Deployment on Oracle Cloud VM with H2 (or initial Supabase integration).
+    \end{itemize}
+    \item \textbf{Milestone 3: Polish \& Reporting (Final Submission, Nov 6, 2026)}
+    \begin{itemize}
+        \item Full system deployed on production environment (Oracle Cloud + Vercel + Supabase).
+        \item PDF and Excel report generation functional.
+        \item Anonymous doubt submission pipeline implemented.
+        \item UI polish (responsive design, error states, dark mode).
+        \item Handoff to stakeholder for live classroom testing.
+    \end{itemize}
+\end{itemize}
+
+\section{Risks and Plan B}
+
+\begin{enumerate}
+    \item \textbf{Risk: Aggressive Mobile Browser Throttling}\\
+    \textit{Feasibility: High.} Mobile operating systems (especially iOS Safari) aggressively throttle or suspend background tabs, causing legitimate heartbeat pings to be dropped and resulting in false-positive attendance invalidations.\\
+    \textbf{Plan B:} Utilize the Screen Wake Lock API to keep the screen alive during the session. Implement a server-side grace period allowing up to 15 seconds (3 consecutive missed heartbeats) of leniency. If students still fail the check due to device issues, rely on the manual attendance override feature to correct errors.
+    
+    \item \textbf{Risk: Short-Lived Token Expiry under Poor Network Conditions}\\
+    \textit{Feasibility: Medium-High.} In a dense classroom, sudden spikes of 100+ students connecting to the same Wi-Fi router often cause latency spikes. The 15-second rolling token window may prove too restrictive, causing legitimate submissions to fail due to timeout errors. \\
+    \textbf{Plan B:} Temporarily increase the token validity window to 2 minutes to accommodate network latency, and introduce one of the following proxy-prevention fallbacks:
+    \begin{itemize}
+        \item \textbf{Geolocation Geofencing:} Enforce HTML5 Geolocation API checks on the frontend. The server will accept the delayed token, but only if the attached GPS coordinates fall within a tight 50-meter radius of the classroom's known location.
+        \item \textbf{Offline Verification Ticket:} If the network drops entirely, the student's browser processes the scan offline and generates a large, high-contrast "Verification Ticket" (e.g., a full-screen colored background with a dynamic 3-character code). The professor can do a rapid visual check of these screens as students exit the room.
+    \end{itemize}
+    
+    \item \textbf{Risk: Infrastructure Reliability (Oracle Cloud Free Tier)}\\
+    \textit{Feasibility: Medium.} The Oracle Cloud Always Free VM (4 OCPUs, 24GB RAM) will easily handle the load, but Oracle has aggressive idle policies. The VM might be reclaimed or paused if it detects low CPU/network usage over a 7-day period (e.g., during a semester break). \\
+    \textbf{Plan B:} Implement a lightweight background cron job (e.g., running \texttt{stress-ng}) to artificially consume $\sim$10\% CPU to prevent idle reclamation. As a secondary remote fallback, the application is container-ready and can be rapidly deployed to Render.com.
+    
+    \item \textbf{Risk: Database Connection Limits (Supabase Free Tier) during Concurrency Spikes}\\
+    \textit{Feasibility: Low.} It is a common misconception that 100+ students scanning the QR code simultaneously will crash the Supabase Free Tier due to connection limits. However, this risk is thoroughly mitigated by the backend architecture. \\
+    \textbf{Mitigation in place:} The Spring Boot backend acts as a shock absorber using the HikariCP connection pool. By default, Spring Boot maintains a pool of only 10 concurrent database connections. When 100 HTTP requests arrive simultaneously, Tomcat threads queue them in memory. The 10 connections rapidly cycle through the quick \texttt{INSERT} queries (taking only 2--5 milliseconds each). Thus, Supabase will only ever see 10 concurrent connections and will easily handle the load without dropping requests or locking tables.
+\end{enumerate}
+
+\end{document}

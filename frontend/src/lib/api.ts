@@ -7,7 +7,7 @@
  * - Handles 204 No Content (returns undefined without trying to parse JSON).
  */
 
-const BASE = '/api'; // proxied to :8080 by vite.config.ts in dev
+const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'; // proxied to :8080 by vite.config.ts in dev; set to Oracle VM URL in prod
 
 const TOKEN_KEY = 'professor_token';
 

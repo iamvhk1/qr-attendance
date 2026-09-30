@@ -61,6 +61,13 @@ public class PresenceService {
     /** Minimum heartbeat coverage ratio to count as present. */
     private static final float COVERAGE_THRESHOLD = 0.80f;
 
+    /**
+     * Maximum gap in seconds allowed for a recovery ping before the attendance is invalidated.
+     * Forgives momentary OS-level interruptions (e.g. incoming call, brief screen-off).
+     * A gap longer than this means the student deliberately left the page.
+     */
+    private static final long RECOVERY_GRACE_SECONDS = 10;
+
     private final QrSessionRepository sessionRepository;
     private final AttendanceRepository attendanceRepository;
     private final StudentRepository studentRepository;
@@ -104,7 +111,16 @@ public class PresenceService {
 
         if (existing.isPresent()) {
             Attendance att = existing.get();
-            log.info("Duplicate scan from {} in session {} — returning existing record", request.getRollNumber(), sessionId);
+            // If the student was previously invalidated or simply lost their tab while PENDING,
+            // give them a chance to resume. We keep their original presenceStart so they still lose coverage
+            // for the time they were disconnected.
+            log.info("Student {} is rejoining/rescanning session {}", request.getRollNumber(), sessionId);
+            if (att.getStatus() == AttendanceStatus.INVALIDATED) {
+                att.setStatus(AttendanceStatus.PENDING);
+            }
+            att.setLastHeartbeatAt(null); // Reset the gap tracker so the next heartbeat isn't rejected
+            att.setCurrentNonce(UUID.randomUUID().toString().replace("-", ""));
+            att = attendanceRepository.save(att);
             return ScanResponse.builder()
                     .attendanceId(att.getId())
                     .initialNonce(att.getCurrentNonce())
@@ -141,8 +157,6 @@ public class PresenceService {
                 .build();
     }
 
-    // ── 2. Heartbeat ─────────────────────────────────────────────
-
     /**
      * Records a single heartbeat ping from the student's browser.
      *
@@ -151,24 +165,48 @@ public class PresenceService {
      * If the client signals {@code navigator.webdriver = true}, the attendance
      * is immediately invalidated (automated browser detected).</p>
      *
+     * <p>Recovery pings ({@code recoveryPing = true}) are sent when the student's tab
+     * regains focus after being hidden. They are only accepted if the gap since the last
+     * heartbeat is strictly less than 10 seconds — forgives momentary OS-level interruptions
+     * (e.g. an incoming call) without allowing students to leave the room.</p>
+     *
      * @param attendanceId the attendance UUID extracted from the ATTENDANCE JWT (set by Spring Security)
-     * @param request      contains the current nonce and the webdriver flag
+     * @param request      contains the current nonce, the webdriver flag, and the recoveryPing flag
      * @return a {@link HeartbeatResponse} with the next nonce and current status
      * @throws ResourceNotFoundException if no attendance record exists for this id
-     * @throws IllegalArgumentException  if the nonce is invalid (replay or tampering)
+     * @throws IllegalArgumentException  if the nonce is invalid or the recovery gap exceeds 10 seconds
      */
-    @Transactional
+    @Transactional(noRollbackFor = com.qrattend.exception.AttendanceFraudException.class)
     public HeartbeatResponse recordHeartbeat(UUID attendanceId, HeartbeatRequest request) {
         Attendance attendance = attendanceRepository.findById(attendanceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attendance not found: " + attendanceId));
+
+        // 0. Intercept heartbeats if the session is already over
+        QrSession session = attendance.getSession();
+        if (session.isClosed() || Instant.now().isAfter(session.getExpiresAt())) {
+            // Session is over. If the status is still PENDING, finalise it instantly!
+            // This prevents students from inflating coverage while waiting for the cron job.
+            if (attendance.getStatus() == AttendanceStatus.PENDING) {
+                long expected = computeExpectedHeartbeats(attendance, session);
+                long actual = heartbeatRepository.countBySessionIdAndRollNumber(session.getId(), attendance.getRollNumber());
+                float coverage = Math.min(1.0f, (float) actual / expected);
+                attendance.setHeartbeatCoverage(coverage);
+                attendance.setStatus(coverage >= COVERAGE_THRESHOLD ? AttendanceStatus.CONFIRMED : AttendanceStatus.INVALIDATED);
+                attendanceRepository.save(attendance);
+                log.info("Heartbeat arrived after session {} ended — finalised student {} instantly: {}", session.getId(), attendance.getRollNumber(), attendance.getStatus());
+            }
+            
+            return HeartbeatResponse.builder()
+                    .nextNonce("") // Not needed, session is over
+                    .status(attendance.getStatus().name())
+                    .build();
+        }
 
         // 1. Immediately invalidate if automated browser is detected
         if (request.isWebdriver()) {
             log.warn("Webdriver detected for attendance {} — invalidating", attendanceId);
             attendance.setStatus(AttendanceStatus.INVALIDATED);
             attendanceRepository.save(attendance);
-            // Throw a dedicated fraud exception (NOT SessionClosedException) so that
-            // audit logs and the future Reporting module can distinguish fraud from expiry.
             throw new AttendanceFraudException(
                     "Automated browser detected — attendance invalidated");
         }
@@ -180,19 +218,35 @@ public class PresenceService {
             throw new IllegalArgumentException("Invalid nonce: heartbeat rejected");
         }
 
-        // 3. Persist the heartbeat ping
+        // 3. Gap check — enforce strict 10-second gap limit universally.
+        // We do not trust the frontend's recoveryPing flag; all pings must arrive within the gap limit.
+        Instant lastBeat = attendance.getLastHeartbeatAt();
+        if (lastBeat != null) {
+            long gapSeconds = ChronoUnit.SECONDS.between(lastBeat, Instant.now());
+            if (gapSeconds > RECOVERY_GRACE_SECONDS) {
+                log.warn("Heartbeat gap too large for attendance {}: {}s > {}s — invalidating",
+                        attendanceId, gapSeconds, RECOVERY_GRACE_SECONDS);
+                attendance.setStatus(AttendanceStatus.INVALIDATED);
+                attendanceRepository.save(attendance);
+                throw new AttendanceFraudException(
+                        "Tab hidden or disconnected for " + gapSeconds + "s (max " + RECOVERY_GRACE_SECONDS + "s) — attendance invalidated");
+            }
+            log.debug("Heartbeat accepted for attendance {}: gap={}s", attendanceId, gapSeconds);
+        }
+
+        // 4. Persist the heartbeat ping
         Heartbeat heartbeat = Heartbeat.builder()
                 .session(attendance.getSession())
                 .rollNumber(attendance.getRollNumber())
                 .build();
         heartbeatRepository.save(heartbeat);
 
-        // 4. Rotate the nonce so the client must present this new value next time
+        // 5. Update the last heartbeat timestamp for future recovery gap checks
+        attendance.setLastHeartbeatAt(Instant.now());
+
+        // 6. Rotate the nonce so the client must present this new value next time
         String nextNonce = UUID.randomUUID().toString().replace("-", "");
         attendance.setCurrentNonce(nextNonce);
-        // Note: no explicit save needed here because we're in a @Transactional context
-        // and the entity is managed (dirty-checking will flush), but we save explicitly
-        // to be safe with non-proxy-based tests:
         attendanceRepository.save(attendance);
 
         log.debug("Heartbeat recorded for attendance {} — next nonce issued", attendanceId);
@@ -202,6 +256,7 @@ public class PresenceService {
                 .status(attendance.getStatus().name())
                 .build();
     }
+
 
     // ── 3. Scheduled Coverage Computation ────────────────────────
 
@@ -242,7 +297,7 @@ public class PresenceService {
                 long actualHeartbeats = heartbeatRepository
                         .countBySessionIdAndRollNumber(session.getId(), att.getRollNumber());
 
-                float coverage = (float) actualHeartbeats / expectedHeartbeats;
+                float coverage = Math.min(1.0f, (float) actualHeartbeats / expectedHeartbeats);
                 att.setHeartbeatCoverage(coverage);
 
                 if (coverage >= COVERAGE_THRESHOLD) {
@@ -282,7 +337,12 @@ public class PresenceService {
      */
     private long computeExpectedHeartbeats(Attendance att, QrSession session) {
         Instant start = att.getPresenceStart() != null ? att.getPresenceStart() : session.getCreatedAt();
-        Instant end   = att.getPresenceEnd()   != null ? att.getPresenceEnd()   : session.getExpiresAt();
+        Instant originalEnd = att.getPresenceEnd() != null ? att.getPresenceEnd() : session.getExpiresAt();
+        
+        // If the session was closed early, the presence window is truncated
+        Instant end = (session.getClosedAt() != null && session.getClosedAt().isBefore(originalEnd))
+                ? session.getClosedAt()
+                : originalEnd;
 
         long durationSeconds = ChronoUnit.SECONDS.between(start, end);
         long expected = (long) Math.ceil((double) durationSeconds / HEARTBEAT_INTERVAL_SECONDS);

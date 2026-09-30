@@ -1,9 +1,16 @@
 package com.qrattend.controller;
 
+import com.qrattend.dto.scan.DoubtRequest;
 import com.qrattend.dto.scan.HeartbeatRequest;
 import com.qrattend.dto.scan.HeartbeatResponse;
 import com.qrattend.dto.scan.ScanRequest;
 import com.qrattend.dto.scan.ScanResponse;
+import com.qrattend.entity.Doubt;
+import com.qrattend.entity.QrSession;
+import com.qrattend.exception.ResourceNotFoundException;
+import com.qrattend.repository.AttendanceRepository;
+import com.qrattend.repository.DoubtRepository;
+import com.qrattend.repository.QrSessionRepository;
 import com.qrattend.service.PresenceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +46,9 @@ import java.util.UUID;
 public class StudentScanController {
 
     private final PresenceService presenceService;
+    private final DoubtRepository doubtRepository;
+    private final AttendanceRepository attendanceRepository;
+    private final QrSessionRepository qrSessionRepository;
 
     // ── POST /api/student/scan ────────────────────────────────────
 
@@ -81,6 +91,32 @@ public class StudentScanController {
         UUID attendanceId = getAttendanceId();
         HeartbeatResponse response = presenceService.recordHeartbeat(attendanceId, request);
         return ResponseEntity.ok(response);
+    }
+
+    // ── POST /api/student/doubt ───────────────────────────────────
+
+    /**
+     * Submits an anonymous doubt question for the current session.
+     *
+     * <p>Requires the ATTENDANCE JWT, ensuring only students who have successfully scanned
+     * and hold a valid attendance token can submit doubts.</p>
+     *
+     * @return 200 OK with an empty body on success
+     */
+    @PostMapping("/doubt")
+    public ResponseEntity<Void> submitDoubt(@Valid @RequestBody DoubtRequest request) {
+        UUID attendanceId = getAttendanceId();
+        com.qrattend.entity.Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found: " + attendanceId));
+        QrSession session = attendance.getSession();
+
+        Doubt doubt = Doubt.builder()
+                .session(session)
+                .question(request.getText())
+                .build();
+        doubtRepository.save(doubt);
+
+        return ResponseEntity.ok().build();
     }
 
     // ── Helpers ──────────────────────────────────────────────────

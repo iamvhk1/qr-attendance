@@ -43,11 +43,13 @@ public class JwtUtil {
     private final long scanExpirationMs;
     private final long inviteExpirationMs;
     private final long attendanceExpirationMs;
+    private final long scanCongestionExpirationMs;
 
     public JwtUtil(
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.login-expiration-ms}") long loginExpirationMs,
             @Value("${app.jwt.scan-expiration-ms}") long scanExpirationMs,
+            @Value("${app.jwt.scan-congestion-expiration-ms:20000}") long scanCongestionExpirationMs,
             @Value("${app.jwt.invite-expiration-ms}") long inviteExpirationMs,
             @Value("${app.jwt.attendance-expiration-ms:7200000}") long attendanceExpirationMs) {
 
@@ -56,6 +58,7 @@ public class JwtUtil {
         this.signingKey          = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.loginExpirationMs   = loginExpirationMs;
         this.scanExpirationMs    = scanExpirationMs;
+        this.scanCongestionExpirationMs = scanCongestionExpirationMs;
         this.inviteExpirationMs  = inviteExpirationMs;
         this.attendanceExpirationMs = attendanceExpirationMs;
     }
@@ -90,8 +93,21 @@ public class JwtUtil {
      * @return a signed JWT string
      */
     public String generateScanToken(UUID sessionId) {
+        return generateScanToken(sessionId, false);
+    }
+
+    /**
+     * Creates a short-lived scan token embedded in QR code URLs, with an optional
+     * congestion mode that extends the validity (default 20 s).
+     *
+     * @param sessionId the QR session's UUID
+     * @param congestionMode if true, uses the extended congestion expiry
+     * @return a signed JWT string
+     */
+    public String generateScanToken(UUID sessionId, boolean congestionMode) {
         Date now    = new Date();
-        Date expiry = new Date(now.getTime() + scanExpirationMs);
+        long expMs  = congestionMode ? scanCongestionExpirationMs : scanExpirationMs;
+        Date expiry = new Date(now.getTime() + expMs);
 
         return Jwts.builder()
                 .subject(sessionId.toString())

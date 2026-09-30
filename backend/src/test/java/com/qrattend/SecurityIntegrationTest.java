@@ -267,7 +267,7 @@ class SecurityIntegrationTest {
             // Generate a token that expired 1 second ago
             JwtUtil expiredUtil = new JwtUtil(
                     "c3VwZXItc2VjcmV0LWtleS1mb3ItcXItYXR0ZW5kYW5jZS1zeXN0ZW0tMjAyNi1jaGFuZ2UtaW4tcHJvZA==",
-                    -1000L, 15000L, 172800000L, 7200000L);
+                    -1000L, 15000L, 20000L, 172800000L, 7200000L);
             String expiredJwt = expiredUtil.generateLoginToken(UUID.randomUUID(), "expired@test.com");
 
             mockMvc.perform(get("/api/courses")
