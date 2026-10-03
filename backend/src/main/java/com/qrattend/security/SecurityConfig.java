@@ -42,6 +42,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints
                 .requestMatchers("/api/auth/**").permitAll() // Login / Register
+                .requestMatchers("/", "/health").permitAll() // Render health check
                 // IMPORTANT: /api/admin/** bypasses JWT authentication entirely.
                 // Security is enforced at the controller level via a shared admin secret
                 // (app.admin.secret). Any NEW endpoint under /api/admin/ will also be
