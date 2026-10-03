@@ -58,6 +58,25 @@ public class ReportController {
 
     // ── Helper ───────────────────────────────────────────────
 
+    /**
+     * GET /api/reports/courses/{id}/excel — Downloads a consolidated course attendance report.
+     */
+    @GetMapping("/courses/{id}/excel")
+    public ResponseEntity<byte[]> downloadCourseReport(@PathVariable UUID id) {
+        UUID professorId = getProfessorId();
+        byte[] bytes = reportService.generateCourseExcel(id, professorId);
+
+        String filename = "course-report-" + id + "-" + LocalDate.now() + ".xlsx";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        headers.setContentDisposition(
+                ContentDisposition.attachment().filename(filename).build());
+        headers.setContentLength(bytes.length);
+
+        return ResponseEntity.ok().headers(headers).body(bytes);
+    }
     private UUID getProfessorId() {
         return (UUID) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }

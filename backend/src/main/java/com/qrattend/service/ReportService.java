@@ -2,10 +2,14 @@ package com.qrattend.service;
 
 import com.qrattend.entity.Attendance;
 import com.qrattend.entity.QrSession;
+import com.qrattend.entity.Course;
+import com.qrattend.entity.Student;
 import com.qrattend.exception.ForbiddenException;
 import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.repository.AttendanceRepository;
+import com.qrattend.repository.CourseRepository;
 import com.qrattend.repository.QrSessionRepository;
+import com.qrattend.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -18,8 +22,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Generates Excel (.xlsx) attendance reports for closed sessions using Apache POI.
@@ -38,6 +45,8 @@ public class ReportService {
 
     private final QrSessionRepository sessionRepository;
     private final AttendanceRepository attendanceRepository;
+    private final CourseRepository courseRepository;
+    private final StudentRepository studentRepository;
 
     private static final DateTimeFormatter TIME_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
@@ -164,6 +173,124 @@ public class ReportService {
         } catch (IOException e) {
             log.error("Failed to generate Excel report for session {}: {}", sessionId, e.getMessage());
             throw new RuntimeException("Failed to generate Excel report", e);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] generateCourseExcel(UUID courseId, UUID professorId) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
+
+        if (!course.getProfessor().getId().equals(professorId)) {
+            throw new ForbiddenException("You do not own this course");
+        }
+
+        List<Student> students = studentRepository.findByCourseId(courseId);
+        List<QrSession> sessions = sessionRepository.findByCourseIdOrderByCreatedAtDesc(courseId);
+        
+        // rollNumber -> session.id -> Attendance
+        Map<String, Map<UUID, Attendance>> studentAttendanceMap = new HashMap<>();
+        for (Student s : students) {
+            studentAttendanceMap.put(s.getRollNumber(), new HashMap<>());
+        }
+
+        for (QrSession session : sessions) {
+            List<Attendance> records = attendanceRepository.findBySessionId(session.getId());
+            for (Attendance a : records) {
+                if (studentAttendanceMap.containsKey(a.getRollNumber())) {
+                    studentAttendanceMap.get(a.getRollNumber()).put(session.getId(), a);
+                }
+            }
+        }
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Consolidated Report");
+
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+            CellStyle confirmedStyle = workbook.createCellStyle();
+            confirmedStyle.setFillForegroundColor(IndexedColors.LIGHT_GREEN.getIndex());
+            confirmedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            
+            CellStyle invalidatedStyle = workbook.createCellStyle();
+            invalidatedStyle.setFillForegroundColor(IndexedColors.ROSE.getIndex());
+            invalidatedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+            // Title
+            Row titleRow = sheet.createRow(0);
+            titleRow.createCell(0).setCellValue("Consolidated Report — " + course.getName());
+            sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 5));
+
+            // Headers
+            Row headerRow = sheet.createRow(2);
+            headerRow.createCell(0).setCellValue("Roll No");
+            headerRow.createCell(1).setCellValue("Name");
+            headerRow.createCell(2).setCellValue("Total Classes");
+            headerRow.createCell(3).setCellValue("Attended");
+            headerRow.createCell(4).setCellValue("Attendance %");
+
+            int col = 5;
+            DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MMM dd, yyyy").withZone(ZoneId.systemDefault());
+            for (QrSession session : sessions) {
+                headerRow.createCell(col++).setCellValue(DATE_FMT.format(session.getCreatedAt()));
+            }
+            for (int i = 0; i < col; i++) {
+                headerRow.getCell(i).setCellStyle(headerStyle);
+            }
+
+            // Data
+            int rowIdx = 3;
+            for (Student student : students) {
+                Row row = sheet.createRow(rowIdx++);
+                row.createCell(0).setCellValue(student.getRollNumber());
+                row.createCell(1).setCellValue(student.getFullName());
+
+                int attended = 0;
+                Map<UUID, Attendance> attMap = studentAttendanceMap.get(student.getRollNumber());
+                for (QrSession session : sessions) {
+                    Attendance a = attMap.get(session.getId());
+                    if (a != null && a.getStatus() == com.qrattend.entity.AttendanceStatus.CONFIRMED) {
+                        attended++;
+                    }
+                }
+
+                row.createCell(2).setCellValue(sessions.size());
+                row.createCell(3).setCellValue(attended);
+                double percentage = sessions.isEmpty() ? 0 : (double) attended / sessions.size() * 100;
+                row.createCell(4).setCellValue(String.format("%.1f%%", percentage));
+
+                int cIdx = 5;
+                for (QrSession session : sessions) {
+                    Attendance a = attMap.get(session.getId());
+                    Cell cell = row.createCell(cIdx++);
+                    if (a == null) {
+                        cell.setCellValue("Absent");
+                    } else {
+                        cell.setCellValue(a.getStatus().name());
+                        if (a.getStatus() == com.qrattend.entity.AttendanceStatus.CONFIRMED) {
+                            cell.setCellStyle(confirmedStyle);
+                        } else if (a.getStatus() == com.qrattend.entity.AttendanceStatus.INVALIDATED) {
+                            cell.setCellStyle(invalidatedStyle);
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < col; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            log.error("Failed to generate course Excel report", e);
+            throw new RuntimeException("Failed to generate course report", e);
         }
     }
 }
