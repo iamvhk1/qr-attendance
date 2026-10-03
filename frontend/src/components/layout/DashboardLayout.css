@@ -232,12 +232,25 @@
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
+
+.theme-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  display: flex;
+  transition: color var(--duration-fast);
+}
+.theme-toggle-btn:hover { color: var(--text-primary); }
 
 .topbar-professor-name {
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /* Page content */

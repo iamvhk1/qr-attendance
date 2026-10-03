@@ -280,11 +280,49 @@
 
 /* ── Responsive ──────────────────────────────────────────────── */
 
+/* Tablet / large phone — stack QR above attendance table */
 @media (max-width: 900px) {
   .session-grid {
     grid-template-columns: 1fr;
   }
   .qr-content { padding: var(--space-4) 0; }
+}
+
+/* Small phone — tighten spacing further */
+@media (max-width: 480px) {
+  .session-page { gap: var(--space-4); }
+
+  .session-status-bar {
+    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .attendance-summary {
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* Make the action buttons stack on very narrow screens */
+  .session-action-row {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .session-action-row > * {
+    width: 100%;
+  }
+
+  /* Tighten the attendance table columns */
+  .attendance-table th,
+  .attendance-table td {
+    padding: var(--space-2) var(--space-2);
+    font-size: 0.8125rem;
+  }
+
+  /* Hide the less critical columns on tiny screens */
+  .attendance-table .time-cell {
+    display: none;
+  }
 }
 
 /* ── Session action row (Extend + End) ───────────────────────── */

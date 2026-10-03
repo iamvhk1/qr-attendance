@@ -16,6 +16,16 @@
   overflow: hidden;
 }
 
+/* On small phones the keyboard reduces the viewport.
+   Allow the card to scroll rather than being hidden behind it. */
+@media (max-width: 480px) {
+  .scan-root {
+    align-items: flex-start;
+    padding-top: var(--space-8);
+    overflow: auto;
+  }
+}
+
 /* Ambient glow orbs */
 .scan-orb {
   position: absolute;

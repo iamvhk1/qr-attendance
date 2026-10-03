@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -8,6 +8,8 @@ import {
   X,
   ShieldCheck,
   ChevronRight,
+  Moon,
+  Sun
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import './DashboardLayout.css';
@@ -16,6 +18,31 @@ const DashboardLayout: React.FC = () => {
   const { professor, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Theme state
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system';
+  });
+
+  useEffect(() => {
+    if (theme === 'system') {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.removeItem('theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    // If system, check OS preference to know what to toggle to next
+    if (theme === 'system') {
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(isDark ? 'light' : 'dark');
+    } else {
+      setTheme(theme === 'light' ? 'dark' : 'light');
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -40,7 +67,9 @@ const DashboardLayout: React.FC = () => {
           <span className="sidebar-brand-icon" aria-hidden="true">
             <ShieldCheck size={22} strokeWidth={1.75} />
           </span>
-          <span className="sidebar-brand-name gradient-text">QR Attend</span>
+          <div className="sidebar-brand-name">
+            <span className="gradient-text">QR Attendance</span>
+          </div>
           <button
             className="sidebar-close-btn"
             onClick={() => setSidebarOpen(false)}
@@ -105,6 +134,18 @@ const DashboardLayout: React.FC = () => {
           </div>
 
           <div className="topbar-right">
+            <button
+              className="theme-toggle-btn"
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              title="Toggle theme"
+            >
+              {theme === 'light' || (theme === 'system' && !window.matchMedia('(prefers-color-scheme: dark)').matches) ? (
+                <Moon size={18} />
+              ) : (
+                <Sun size={18} />
+              )}
+            </button>
             <span className="topbar-professor-name">{professor?.fullName ?? ''}</span>
           </div>
         </header>

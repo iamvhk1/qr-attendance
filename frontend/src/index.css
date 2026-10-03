@@ -6,7 +6,7 @@
 /* ── Google Fonts ───────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── Design Tokens ──────────────────────────────────────────── */
+/* ── Design Tokens (Dark Mode — default) ────────────────────── */
 :root {
   /* Surface */
   --bg-base:        hsl(222, 47%, 5%);
@@ -55,10 +55,11 @@
   --shadow-glow-accent:  0 0 24px hsl(158 68% 44% / 0.25);
 
   /* Radius */
-  --radius-sm:  6px;
-  --radius-md:  10px;
-  --radius-lg:  16px;
-  --radius-xl:  24px;
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+  --radius-2xl:  32px;
   --radius-full: 9999px;
 
   /* Spacing */
@@ -88,6 +89,122 @@
   --glass-bg:     hsl(222 35% 9% / 0.7);
   --glass-border: hsl(222 25% 30% / 0.4);
   --glass-blur:   16px;
+
+  /* Tell the browser chrome (scrollbars, form controls) to use dark UI */
+  color-scheme: dark;
+}
+
+/* ── Light Mode Variables ─────────────────────────────────────── */
+/* Extracted to be used by both OS preference and manual toggle */
+:root[data-theme="light"],
+:root[data-theme="light"] body {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg-base:        hsl(220, 20%, 97%);
+  --bg-surface:     hsl(220, 18%, 100%);
+  --bg-elevated:    hsl(220, 16%, 94%);
+  --bg-overlay:     hsl(220, 14%, 88%);
+
+  /* Primary — deeper indigo for contrast on white */
+  --primary-50:     hsl(246, 100%, 96%);
+  --primary-100:    hsl(246, 100%, 90%);
+  --primary-200:    hsl(246, 80%,  60%);
+  --primary-400:    hsl(246, 75%,  52%);
+  --primary-500:    hsl(246, 72%,  44%);
+  --primary-600:    hsl(246, 68%,  38%);
+  --primary-900:    hsl(246, 60%,  90%);
+
+  /* Accent — deeper emerald for contrast on white */
+  --accent-400:     hsl(158, 65%, 36%);
+  --accent-500:     hsl(158, 62%, 30%);
+  --accent-900:     hsl(158, 50%, 90%);
+
+  /* Danger */
+  --danger-400:     hsl(354, 72%, 48%);
+  --danger-500:     hsl(354, 68%, 40%);
+  --danger-900:     hsl(354, 60%, 93%);
+
+  /* Warning */
+  --warning-400:    hsl(38, 88%, 42%);
+  --warning-900:    hsl(38, 60%, 92%);
+
+  /* Text — high contrast on light background */
+  --text-primary:   hsl(222, 30%, 12%);
+  --text-secondary: hsl(222, 18%, 36%);
+  --text-muted:     hsl(222, 12%, 45%); /* slightly darker for better visibility */
+
+  /* Borders */
+  --border-subtle:  hsl(220, 18%, 87%);
+  --border-default: hsl(220, 16%, 78%);
+  --border-strong:  hsl(220, 14%, 62%);
+
+  /* Shadows — lighter, softer on white */
+  --shadow-sm:  0 1px 3px hsl(222 20% 40% / 0.10);
+  --shadow-md:  0 4px 16px hsl(222 20% 40% / 0.13);
+  --shadow-lg:  0 8px 40px hsl(222 20% 40% / 0.16);
+  --shadow-glow-primary: 0 0 24px hsl(246 75% 52% / 0.18);
+  --shadow-glow-accent:  0 0 24px hsl(158 62% 32% / 0.18);
+
+  /* Glassmorphism */
+  --glass-bg:     hsl(220 18% 100% / 0.82);
+  --glass-border: hsl(220 16% 78% / 0.55);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    /* Surfaces */
+    --bg-base:        hsl(220, 20%, 97%);
+    --bg-surface:     hsl(220, 18%, 100%);
+    --bg-elevated:    hsl(220, 16%, 94%);
+    --bg-overlay:     hsl(220, 14%, 88%);
+
+    /* Primary */
+    --primary-50:     hsl(246, 100%, 96%);
+    --primary-100:    hsl(246, 100%, 90%);
+    --primary-200:    hsl(246, 80%,  60%);
+    --primary-400:    hsl(246, 75%,  52%);
+    --primary-500:    hsl(246, 72%,  44%);
+    --primary-600:    hsl(246, 68%,  38%);
+    --primary-900:    hsl(246, 60%,  90%);
+
+    /* Accent */
+    --accent-400:     hsl(158, 65%, 36%);
+    --accent-500:     hsl(158, 62%, 30%);
+    --accent-900:     hsl(158, 50%, 90%);
+
+    /* Danger */
+    --danger-400:     hsl(354, 72%, 48%);
+    --danger-500:     hsl(354, 68%, 40%);
+    --danger-900:     hsl(354, 60%, 93%);
+
+    /* Warning */
+    --warning-400:    hsl(38, 88%, 42%);
+    --warning-900:    hsl(38, 60%, 92%);
+
+    /* Text */
+    --text-primary:   hsl(222, 30%, 12%);
+    --text-secondary: hsl(222, 18%, 36%);
+    --text-muted:     hsl(222, 12%, 45%);
+
+    /* Borders */
+    --border-subtle:  hsl(220, 18%, 87%);
+    --border-default: hsl(220, 16%, 78%);
+    --border-strong:  hsl(220, 14%, 62%);
+
+    /* Shadows */
+    --shadow-sm:  0 1px 3px hsl(222 20% 40% / 0.10);
+    --shadow-md:  0 4px 16px hsl(222 20% 40% / 0.13);
+    --shadow-lg:  0 8px 40px hsl(222 20% 40% / 0.16);
+    --shadow-glow-primary: 0 0 24px hsl(246 75% 52% / 0.18);
+    --shadow-glow-accent:  0 0 24px hsl(158 62% 32% / 0.18);
+
+    /* Glassmorphism */
+    --glass-bg:     hsl(220 18% 100% / 0.82);
+    --glass-border: hsl(220 16% 78% / 0.55);
+  }
 }
 
 /* ── Global Reset ───────────────────────────────────────────── */
@@ -112,11 +229,20 @@ body {
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Subtle animated grid background */
+  /* Subtle grid background */
   background-image:
     linear-gradient(hsl(246 85% 57% / 0.03) 1px, transparent 1px),
     linear-gradient(90deg, hsl(246 85% 57% / 0.03) 1px, transparent 1px);
   background-size: 40px 40px;
+  transition: background-color var(--duration-normal), color var(--duration-normal);
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background-image:
+      linear-gradient(hsl(246 60% 52% / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(246 60% 52% / 0.05) 1px, transparent 1px);
+  }
 }
 
 #root {
@@ -311,7 +437,7 @@ code, pre {
   margin-block: var(--space-6);
 }
 
-/* ── Toast container placeholder ─────────────────────────────── */
+/* ── Toast viewport ──────────────────────────────────────────── */
 .toast-viewport {
   position: fixed;
   bottom: var(--space-6);
@@ -323,8 +449,16 @@ code, pre {
   pointer-events: none;
 }
 
-/* ── Modal ───────────────────────────────────────────────────── */
+/* Full-width toasts on narrow screens */
+@media (max-width: 480px) {
+  .toast-viewport {
+    right: var(--space-3);
+    left: var(--space-3);
+    bottom: var(--space-4);
+  }
+}
 
+/* ── Modal ───────────────────────────────────────────────────── */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -335,7 +469,13 @@ code, pre {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-6);
+  padding: var(--space-4);
+}
+
+@media (prefers-color-scheme: light) {
+  .modal-backdrop {
+    background: hsl(222 20% 20% / 0.5);
+  }
 }
 
 .modal-panel {
@@ -348,9 +488,7 @@ code, pre {
   overflow: hidden;
 }
 
-.modal-panel-sm {
-  max-width: 380px;
-}
+.modal-panel-sm { max-width: 380px; }
 
 .modal-header {
   display: flex;
@@ -384,9 +522,7 @@ code, pre {
   padding: var(--space-6);
 }
 
-.modal-body {
-  padding: var(--space-5) var(--space-6);
-}
+.modal-body { padding: var(--space-5) var(--space-6); }
 
 .modal-body p {
   color: var(--text-secondary);
@@ -394,9 +530,7 @@ code, pre {
   max-width: 100%;
 }
 
-.modal-body strong {
-  color: var(--text-primary);
-}
+.modal-body strong { color: var(--text-primary); }
 
 .modal-error {
   font-size: 0.8125rem;
@@ -414,4 +548,86 @@ code, pre {
   gap: var(--space-3);
   padding: var(--space-4) var(--space-6) var(--space-6);
   border-top: 1px solid var(--border-subtle);
+}
+
+/* On narrow phones, modals slide up from bottom as a bottom-sheet */
+@media (max-width: 480px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-panel {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    max-width: 100%;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions > * { width: 100%; }
+}
+
+/* ── Error Boundary Fallback UI ──────────────────────────────── */
+.error-boundary-root {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.error-boundary-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--space-10) var(--space-8);
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  box-shadow: var(--shadow-lg);
+}
+
+.error-boundary-icon {
+  color: var(--danger-400);
+  filter: drop-shadow(0 0 16px hsl(354 90% 68% / 0.4));
+}
+
+.error-boundary-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.error-boundary-msg {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  max-width: 38ch;
+  line-height: 1.6;
+}
+
+.error-boundary-detail {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  width: 100%;
+  text-align: left;
+  overflow-x: auto;
+}
+
+.error-boundary-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: center;
 }

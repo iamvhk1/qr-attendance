@@ -15,4 +15,7 @@ public interface HeartbeatRepository extends JpaRepository<Heartbeat, UUID> {
 
     /** Count heartbeats for a student in a session (quick coverage check). */
     long countBySessionIdAndRollNumber(UUID sessionId, String rollNumber);
+
+    /** Delete all heartbeats for a student in a session (used when rescanning for a fresh chance). */
+    void deleteBySessionIdAndRollNumber(UUID sessionId, String rollNumber);
 }

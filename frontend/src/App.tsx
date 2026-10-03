@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Loader } from './components/ui';
 import { AuthProvider, useAuth } from './lib/auth';
+import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
 // ── Lazy-loaded page chunks ──────────────────────────────────────
@@ -44,37 +45,39 @@ const PublicRoute: React.FC = () => {
 
 // ── App ──────────────────────────────────────────────────────────
 const App: React.FC = () => (
-  <BrowserRouter>
-    <AuthProvider>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          {/* Landing */}
-          <Route path="/" element={<LandingPage />} />
+  <ErrorBoundary>
+    <BrowserRouter>
+      <AuthProvider>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Landing */}
+            <Route path="/" element={<LandingPage />} />
 
-          {/* Student scan route — no auth required */}
-          <Route path="/scan" element={<ScanPage />} />
+            {/* Student scan route — no auth required */}
+            <Route path="/scan" element={<ScanPage />} />
 
-          {/* Public auth routes — redirect away if already logged in */}
-          <Route element={<PublicRoute />}>
-            <Route path="/login"    element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-          </Route>
-
-          {/* Protected professor routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route element={<DashboardLayout />}>
-              <Route path="/courses"           element={<CoursesPage />} />
-              <Route path="/courses/:courseId" element={<CourseDetailPage />} />
-              <Route path="/sessions/:sessionId" element={<SessionPage />} />
+            {/* Public auth routes — redirect away if already logged in */}
+            <Route element={<PublicRoute />}>
+              <Route path="/login"    element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
             </Route>
-          </Route>
 
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Suspense>
-    </AuthProvider>
-  </BrowserRouter>
+            {/* Protected professor routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<DashboardLayout />}>
+                <Route path="/courses"           element={<CoursesPage />} />
+                <Route path="/courses/:courseId" element={<CourseDetailPage />} />
+                <Route path="/sessions/:sessionId" element={<SessionPage />} />
+              </Route>
+            </Route>
+
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
+      </AuthProvider>
+    </BrowserRouter>
+  </ErrorBoundary>
 );
 
 export default App;

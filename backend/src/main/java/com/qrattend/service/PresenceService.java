@@ -111,15 +111,18 @@ public class PresenceService {
 
         if (existing.isPresent()) {
             Attendance att = existing.get();
-            // If the student was previously invalidated or simply lost their tab while PENDING,
-            // give them a chance to resume. We keep their original presenceStart so they still lose coverage
-            // for the time they were disconnected.
-            log.info("Student {} is rejoining/rescanning session {}", request.getRollNumber(), sessionId);
-            if (att.getStatus() == AttendanceStatus.INVALIDATED) {
-                att.setStatus(AttendanceStatus.PENDING);
-            }
+            // The user requested to REMOVE the anti-cheat re-join penalty.
+            // Every new scan gives a completely fresh chance for the remaining duration.
+            log.info("Student {} is rejoining/rescanning session {}. Resetting presenceStart for a fresh chance.", request.getRollNumber(), sessionId);
+            
+            att.setStatus(AttendanceStatus.PENDING);
+            att.setPresenceStart(Instant.now()); // Give them a fresh start window
             att.setLastHeartbeatAt(null); // Reset the gap tracker so the next heartbeat isn't rejected
             att.setCurrentNonce(UUID.randomUUID().toString().replace("-", ""));
+            
+            // Delete old heartbeats to give a completely fresh slate
+            heartbeatRepository.deleteBySessionIdAndRollNumber(sessionId, request.getRollNumber());
+            
             att = attendanceRepository.save(att);
             return ScanResponse.builder()
                     .attendanceId(att.getId())
