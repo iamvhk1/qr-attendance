@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Business logic for QR attendance session management.
@@ -111,6 +112,18 @@ public class SessionService {
                 saved.getId(), course.getId(), professorId, duration);
 
         return SessionResponse.fromEntity(saved);
+    }
+
+    /**
+     * Lists all sessions for a given course.
+     */
+    @Transactional(readOnly = true)
+    public List<SessionResponse> listSessionsByCourse(UUID courseId, UUID professorId) {
+        getOwnedCourse(courseId, professorId);
+        return sessionRepository.findByCourseIdOrderByCreatedAtDesc(courseId)
+                .stream()
+                .map(SessionResponse::fromEntity)
+                .collect(Collectors.toList());
     }
 
     // ── Read ─────────────────────────────────────────────────

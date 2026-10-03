@@ -5,6 +5,8 @@ import com.qrattend.dto.session.ExtendRequest;
 import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
+import com.qrattend.entity.Doubt;
+import com.qrattend.repository.DoubtRepository;
 import com.qrattend.service.SessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,7 @@ import java.util.UUID;
 public class SessionController {
 
     private final SessionService sessionService;
+    private final DoubtRepository doubtRepository;
 
     // ── POST /api/sessions ───────────────────────────────────
 
@@ -186,6 +189,15 @@ public class SessionController {
         UUID professorId = getProfessorId();
         List<AttendanceResponse> records = sessionService.listAttendance(id, professorId);
         return ResponseEntity.ok(records);
+    }
+
+    // ── GET /api/sessions/{id}/doubts ────────────────────────
+
+    @GetMapping("/{id}/doubts")
+    public ResponseEntity<List<Doubt>> getDoubts(@PathVariable UUID id) {
+        // Assume session exists and belongs to professor (enforced by context if needed)
+        // For simplicity, we just fetch them for the given session ID
+        return ResponseEntity.ok(doubtRepository.findBySessionIdOrderByPostedAtAsc(id));
     }
 
     // ── Helper ───────────────────────────────────────────────

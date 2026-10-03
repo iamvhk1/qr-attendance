@@ -2,7 +2,9 @@ package com.qrattend.controller;
 
 import com.qrattend.dto.course.CourseRequest;
 import com.qrattend.dto.course.CourseResponse;
+import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.service.CourseService;
+import com.qrattend.service.SessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class CourseController {
 
     private final CourseService courseService;
+    private final SessionService sessionService;
 
     /**
      * GET /api/courses — List all courses for the logged-in professor.
@@ -60,6 +63,15 @@ public class CourseController {
         UUID professorId = getAuthenticatedProfessorId();
         courseService.deleteCourse(id, professorId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * GET /api/courses/{id}/sessions — List all sessions for a course.
+     */
+    @GetMapping("/{id}/sessions")
+    public ResponseEntity<List<SessionResponse>> listCourseSessions(@PathVariable UUID id) {
+        UUID professorId = getAuthenticatedProfessorId();
+        return ResponseEntity.ok(sessionService.listSessionsByCourse(id, professorId));
     }
 
     // ── Helper ──────────────────────────────────────────────
