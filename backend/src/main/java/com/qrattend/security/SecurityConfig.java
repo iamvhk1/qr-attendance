@@ -1,6 +1,7 @@
 package com.qrattend.security;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -77,6 +78,9 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    @Value("${cors.allowed-origins:http://localhost:5173,http://localhost:3000,http://192.168.0.193:5173}")
+    private List<String> allowedOrigins;
+
     /**
      * CORS configuration — allows the Vite dev frontend (localhost:5173) and any
      * local dev server (localhost:3000) to make cross-origin requests.
@@ -87,11 +91,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "http://localhost:5173",   // Vite dev server
-                "http://localhost:3000",   // CRA / other dev servers
-                "http://192.168.0.193:5173" // Mobile testing IP
-        ));
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
         config.setExposedHeaders(List.of("Authorization"));
