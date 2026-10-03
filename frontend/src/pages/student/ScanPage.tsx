@@ -11,7 +11,7 @@ import './ScanPage.css';
 
 // ── Constants ────────────────────────────────────────────────────────────
 const HEARTBEAT_INTERVAL_MS = 5_000;
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 // ── Page states ──────────────────────────────────────────────────────────
 type ScanState =

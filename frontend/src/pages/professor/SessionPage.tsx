@@ -227,6 +227,13 @@ const SESS_POLL_MS = 5_000;   // check session status every 5s
 const ATT_POLL_MS  = 5_000;   // refresh attendance every 5s
 const EXTEND_SECS  = 60;      // seconds added per "Extend" click
 
+interface Doubt {
+  id: string;
+  sessionId: string;
+  text: string;
+  postedAt: string;
+}
+
 const SessionPage: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -235,6 +242,7 @@ const SessionPage: React.FC = () => {
   const [session, setSession]           = useState<SessionResponse | null>(null);
   const [qrUrl, setQrUrl]               = useState<string | null>(null);
   const [attendance, setAttendance]     = useState<AttendanceResponse[]>([]);
+  const [doubts, setDoubts]             = useState<Doubt[]>([]);
   const [loading, setLoading]           = useState(true);
   const [qrOffline, setQrOffline]       = useState(false);
   const [closing, setClosing]           = useState(false);
@@ -247,6 +255,7 @@ const SessionPage: React.FC = () => {
   const qrIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const doubtIntervalRef= useRef<ReturnType<typeof setInterval> | null>(null);
   const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionRef      = useRef<SessionResponse | null>(null);
   const sseRef          = useRef<EventSource | null>(null);
@@ -254,7 +263,7 @@ const SessionPage: React.FC = () => {
   // ── Helpers ──
 
   const clearAllIntervals = () => {
-    [qrIntervalRef, sessIntervalRef, attIntervalRef, tickRef].forEach((r) => {
+    [qrIntervalRef, sessIntervalRef, attIntervalRef, doubtIntervalRef, tickRef].forEach((r) => {
       if (r.current) { clearInterval(r.current); r.current = null; }
     });
     if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
@@ -307,17 +316,27 @@ const SessionPage: React.FC = () => {
     } catch { /* ignore transient errors */ }
   }, [sessionId]);
 
+  const fetchDoubts = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const dbts = await apiFetch<Doubt[]>(`/sessions/${sessionId}/doubts`);
+      setDoubts(dbts);
+    } catch { /* ignore transient errors */ }
+  }, [sessionId]);
+
   // ── Polling lifecycle ──
 
   const startPolling = useCallback(() => {
     fetchQr();
     fetchSession();
     fetchAttendance();
+    fetchDoubts();
 
     if (!qrIntervalRef.current)   qrIntervalRef.current   = setInterval(fetchQr, congestionMode ? 19_000 : 14_000);
     if (!sessIntervalRef.current) sessIntervalRef.current = setInterval(fetchSession,    SESS_POLL_MS);
     if (!attIntervalRef.current)  attIntervalRef.current  = setInterval(fetchAttendance, ATT_POLL_MS);
-  }, [fetchQr, fetchSession, fetchAttendance, congestionMode]);
+    if (!doubtIntervalRef.current) doubtIntervalRef.current = setInterval(fetchDoubts,    ATT_POLL_MS);
+  }, [fetchQr, fetchSession, fetchAttendance, fetchDoubts, congestionMode]);
 
   // ── Mount: initial load + start polling ──
 
@@ -341,6 +360,8 @@ const SessionPage: React.FC = () => {
           // Arrive at a closed session — fetch attendance for summary
           const records = await apiFetch<AttendanceResponse[]>(`/sessions/${sessionId}/attendance`);
           setAttendance(records);
+          const initialDoubts = await apiFetch<Doubt[]>(`/sessions/${sessionId}/doubts`);
+          setDoubts(initialDoubts);
         }
       } catch (err) {
         toastError('Failed to load session', err instanceof ApiError ? err.message : undefined);
@@ -613,6 +634,33 @@ const SessionPage: React.FC = () => {
                   <CheckCircle size={48} color="var(--accent-400)" strokeWidth={1.5} aria-hidden="true" />
                   <h3>Session Complete</h3>
                   <p>All attendance records have been finalised.</p>
+                  <Button
+                    variant="primary"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem('professor_token');
+                        const url = import.meta.env.VITE_API_BASE_URL ?? '/api';
+                        const res = await fetch(`${url}/reports/sessions/${session.id}/excel`, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (!res.ok) throw new Error('Download failed');
+                        const blob = await res.blob();
+                        const downloadUrl = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = `attendance-${session.id}.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        window.URL.revokeObjectURL(downloadUrl);
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
+                    style={{ marginTop: '1rem' }}
+                  >
+                    Download Excel Report
+                  </Button>
                 </div>
               )}
             </div>
@@ -628,6 +676,29 @@ const SessionPage: React.FC = () => {
           />
           <CardBody>
             <AttendanceTable records={attendance} onOverride={setOverrideTarget} />
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Doubts Panel */}
+      <div style={{ marginTop: '2rem' }}>
+        <Card className="doubts-panel">
+          <CardHeader title={`Live Doubts (${doubts.length})`} subtitle={isLive ? 'Auto-refreshing' : 'Final doubts'} />
+          <CardBody>
+            <div className="doubts-list">
+              {doubts.length === 0 ? (
+                <div className="empty-state">No doubts asked yet.</div>
+              ) : (
+                doubts.map(d => (
+                  <div key={d.id} className="doubt-item" style={{ padding: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                    <div className="doubt-time" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                      {new Date(d.postedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div className="doubt-text" style={{ fontSize: '1rem' }}>{d.text}</div>
+                  </div>
+                ))
+              )}
+            </div>
           </CardBody>
         </Card>
       </div>

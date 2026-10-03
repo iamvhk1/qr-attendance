@@ -43,9 +43,21 @@ const PublicRoute: React.FC = () => {
   return <Outlet />;
 };
 
+// ── Theme Initializer ──────────────────────────────────────────────
+const ThemeInitializer: React.FC = () => {
+  React.useEffect(() => {
+    const stored = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = stored ? stored : prefersDark ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+  }, []);
+  return null;
+};
+
 // ── App ──────────────────────────────────────────────────────────
 const App: React.FC = () => (
   <ErrorBoundary>
+    <ThemeInitializer />
     <BrowserRouter>
       <AuthProvider>
         <Suspense fallback={<PageLoader />}>

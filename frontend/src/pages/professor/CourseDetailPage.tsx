@@ -159,20 +159,24 @@ const CourseDetailPage: React.FC = () => {
   const [loading, setLoading]     = useState(true);
   const [notFound, setNotFound]   = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
 
   const [showAdd, setShowAdd]         = useState(false);
   const [showSession, setShowSession] = useState(false);
+  const [sessions, setSessions]       = useState<SessionResponse[]>([]);
 
   const fetchAll = useCallback(async () => {
     if (!courseId) return;
     setLoading(true);
     try {
-      const [c, s] = await Promise.all([
+      const [c, s, sess] = await Promise.all([
         apiFetch<CourseResponse>(`/courses/${courseId}`),
         apiFetch<StudentResponse[]>(`/courses/${courseId}/students`),
+        apiFetch<SessionResponse[]>(`/courses/${courseId}/sessions`).catch(() => []),
       ]);
       setCourse(c);
       setStudents(s);
+      setSessions(sess);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setNotFound(true);
@@ -232,6 +236,34 @@ const CourseDetailPage: React.FC = () => {
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const handleDownloadCourseReport = async () => {
+    setDownloadingReport(true);
+    try {
+      const token = localStorage.getItem('professor_token');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/reports/courses/${courseId}/excel`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to download report');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `course-report-${courseId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+      success('Report downloaded');
+    } catch (err) {
+      toastError('Download failed', err instanceof Error ? err.message : 'Could not download report');
+    } finally {
+      setDownloadingReport(false);
     }
   };
 
@@ -317,6 +349,15 @@ const CourseDetailPage: React.FC = () => {
                 {uploading ? 'Importing…' : 'Import Excel'}
               </Button>
               <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={downloadingReport ? <Loader variant="spinner" size="sm" /> : <FileSpreadsheet size={16} />}
+                onClick={handleDownloadCourseReport}
+                disabled={downloadingReport}
+              >
+                {downloadingReport ? 'Downloading…' : 'Course Report'}
+              </Button>
+              <Button
                 variant="secondary"
                 size="sm"
                 leftIcon={<Plus size={16} />}
@@ -357,6 +398,56 @@ const CourseDetailPage: React.FC = () => {
                         >
                           <Trash2 size={15} />
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* ── Sessions ── */}
+      <Card style={{ marginTop: '2rem' }}>
+        <CardHeader
+          title={`Past Sessions (${sessions.length})`}
+          subtitle="View history and attendance reports"
+        />
+        <CardBody>
+          {sessions.length === 0 ? (
+            <div className="students-empty">
+              <p>No past sessions recorded yet.</p>
+            </div>
+          ) : (
+            <div className="students-table-wrap">
+              <table className="students-table" aria-label="Past Sessions">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((sess) => (
+                    <tr key={sess.id}>
+                      <td>
+                        {new Date(sess.createdAt).toLocaleDateString()} at {new Date(sess.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td>
+                        <Badge variant={sess.status === 'LIVE' ? 'success' : 'primary'} dot={sess.status === 'LIVE'}>
+                          {sess.status}
+                        </Badge>
+                      </td>
+                      <td>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => navigate(`/sessions/${sess.id}`)}
+                        >
+                          View Session
+                        </Button>
                       </td>
                     </tr>
                   ))}
