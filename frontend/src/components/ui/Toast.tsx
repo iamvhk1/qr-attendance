@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react';
-import type { Toast as ToastItem, ToastVariant } from '../../hooks/useToast';
+import type { Toast as ToastType, ToastVariant } from '../../hooks/useToast';
 import './Toast.css';
 
 // ── Single Toast ─────────────────────────────────────────────────
 
 interface ToastProps {
-  toast: ToastItem;
+  toast: ToastType;
   onRemove: (id: string) => void;
 }
 
@@ -57,7 +57,7 @@ export const ToastItem: React.FC<ToastProps> = ({ toast, onRemove }) => {
 // ── Toast Viewport (portal target) ───────────────────────────────
 
 interface ToastViewportProps {
-  toasts: ToastItem[];
+  toasts: ToastType[];
   onRemove: (id: string) => void;
 }
 

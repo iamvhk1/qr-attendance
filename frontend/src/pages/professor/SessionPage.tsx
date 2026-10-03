@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square, Plus, PenLine, X } from 'lucide-react';
 import { Card, CardHeader, CardBody, Button, Badge, Loader } from '../../components/ui';
@@ -222,7 +222,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, onOverride }
 
 // ── Main Page ─────────────────────────────────────────────────────
 
-const QR_POLL_MS   = 14_000;  // refresh QR every 14s (embedded JWT expires at 20s)
+// ── Main Page ─────────────────────────────────────────────────────
 const SESS_POLL_MS = 5_000;   // check session status every 5s
 const ATT_POLL_MS  = 5_000;   // refresh attendance every 5s
 const EXTEND_SECS  = 60;      // seconds added per "Extend" click
@@ -236,7 +236,6 @@ interface Doubt {
 
 const SessionPage: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const navigate = useNavigate();
   const { toasts, removeToast, error: toastError, success } = useToast();
 
   const [session, setSession]           = useState<SessionResponse | null>(null);
@@ -249,7 +248,6 @@ const SessionPage: React.FC = () => {
   const [extending, setExtending]       = useState(false);
   const [secondsLeft, setSecondsLeft]   = useState(0);
   const [overrideTarget, setOverrideTarget] = useState<AttendanceResponse | null>(null);
-  const [usingSse, setUsingSse]         = useState(false);
   const [congestionMode, setCongestionMode] = useState(false);
 
   const qrIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -258,7 +256,6 @@ const SessionPage: React.FC = () => {
   const doubtIntervalRef= useRef<ReturnType<typeof setInterval> | null>(null);
   const tickRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionRef      = useRef<SessionResponse | null>(null);
-  const sseRef          = useRef<EventSource | null>(null);
 
   // ── Helpers ──
 
@@ -266,7 +263,6 @@ const SessionPage: React.FC = () => {
     [qrIntervalRef, sessIntervalRef, attIntervalRef, doubtIntervalRef, tickRef].forEach((r) => {
       if (r.current) { clearInterval(r.current); r.current = null; }
     });
-    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
   };
 
   const computeSecondsLeft = (s: SessionResponse): number =>
@@ -450,54 +446,7 @@ const SessionPage: React.FC = () => {
 
   // ── SSE connection (with polling fallback) ──
 
-  const startSse = useCallback((id: string) => {
-    if (!('EventSource' in window)) {
-      // Browser doesn't support SSE — fall back to polling
-      return false;
-    }
-    const token = localStorage.getItem('professor_token');
-    // EventSource doesn't support custom headers; use URL-param token for SSE
-    // (backend should accept ?token= as a fallback for SSE auth)
-    const es = new EventSource(`/api/sessions/${id}/stream?token=${token ?? ''}`);
-    let connected = false;
 
-    es.onopen = () => { connected = true; setUsingSse(true); };
-
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.status === 'CLOSED') {
-          setSession((prev) => prev ? { ...prev, status: 'CLOSED' } : prev);
-          clearAllIntervals();
-          return;
-        }
-        // Update session expiresAt from stream to keep countdown accurate
-        if (data.expiresAt && sessionRef.current) {
-          const updated = { ...sessionRef.current, expiresAt: data.expiresAt };
-          sessionRef.current = updated;
-          setSession(updated);
-        }
-        // Update attendance counts if stream provides them
-        if (data.attendance) setAttendance(data.attendance);
-      } catch { /* malformed event, ignore */ }
-    };
-
-    es.onerror = () => {
-      es.close();
-      sseRef.current = null;
-      setUsingSse(false);
-      if (!connected) {
-        // Failed to connect — network/proxy blocking SSE, fall back to polling
-        return;
-      }
-      // Was connected and dropped — retry polling
-      if (sessionRef.current?.status === 'LIVE') startPolling();
-    };
-
-    sseRef.current = es;
-    return true;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
 
 
@@ -529,7 +478,7 @@ const SessionPage: React.FC = () => {
       {/* Status banner */}
       <div className={`session-status-bar ${isLive ? 'status-live' : 'status-closed'}`}>
         {isLive ? (
-          <><span className="status-dot" aria-hidden="true" />Session is LIVE{usingSse && <span className="sse-badge">SSE</span>}</>
+          <><span className="status-dot" aria-hidden="true" />Session is LIVE</>
         ) : (
           <>Session CLOSED</>
         )}

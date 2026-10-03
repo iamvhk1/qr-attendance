@@ -41,13 +41,14 @@ export function clearStoredToken(): void {
 // ── Error type ───────────────────────────────────────────────────
 
 export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly errorText: string,
-    message: string,
-  ) {
+  public readonly status: number;
+  public readonly errorText: string;
+
+  constructor(status: number, errorText: string, message: string) {
     super(message);
     this.name = 'ApiError';
+    this.status = status;
+    this.errorText = errorText;
   }
 }
 

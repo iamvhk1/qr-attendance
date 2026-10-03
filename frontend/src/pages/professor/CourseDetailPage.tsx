@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Users, Upload, Plus, Trash2, Play, X, FileSpreadsheet,
+  ArrowLeft, Users, Plus, Trash2, Play, X, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardHeader, CardBody, Button, Input, Badge, Loader } from '../../components/ui';
 import { apiFetch, apiUpload, ApiError } from '../../lib/api';

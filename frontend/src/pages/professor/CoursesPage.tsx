@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, BookOpen, Users, Trash2, ChevronRight, X } from 'lucide-react';
-import { Card, CardHeader, CardBody, Button, Input, Badge, Loader } from '../../components/ui';
+import { Button, Input, Badge } from '../../components/ui';
 import { apiFetch, ApiError } from '../../lib/api';
 import { useToast } from '../../hooks/useToast';
 import { ToastViewport } from '../../components/ui/Toast';
