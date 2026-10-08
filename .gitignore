@@ -44,3 +44,6 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+
+# === Documentation ===
+BACKEND_ARCHITECTURE.md
