@@ -11,4 +11,6 @@ import java.util.UUID;
 public interface DoubtRepository extends JpaRepository<Doubt, UUID> {
 
     List<Doubt> findBySessionIdOrderByPostedAtAsc(UUID sessionId);
+
+    long countBySessionId(UUID sessionId);
 }

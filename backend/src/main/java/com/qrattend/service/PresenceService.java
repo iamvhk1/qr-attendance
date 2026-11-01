@@ -23,6 +23,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -221,10 +222,19 @@ public class PresenceService {
             throw new IllegalArgumentException("Invalid nonce: heartbeat rejected");
         }
 
-        // 3. Gap check — enforce strict 10-second gap limit universally.
-        // We do not trust the frontend's recoveryPing flag; all pings must arrive within the gap limit.
+        // 3. Gap check & throttle check
+        // Enforce minimum 1.5s interval to prevent rapid-fire bloat attacks, and strict 10s max gap
         Instant lastBeat = attendance.getLastHeartbeatAt();
         if (lastBeat != null) {
+            long millisSinceLast = Duration.between(lastBeat, Instant.now()).toMillis();
+            if (millisSinceLast < 1500) {
+                log.debug("Heartbeat throttled for attendance {} ({}ms < 1500ms)", attendanceId, millisSinceLast);
+                return HeartbeatResponse.builder()
+                        .nextNonce(attendance.getCurrentNonce())
+                        .status(attendance.getStatus().name())
+                        .build();
+            }
+
             long gapSeconds = ChronoUnit.SECONDS.between(lastBeat, Instant.now());
             if (gapSeconds > RECOVERY_GRACE_SECONDS) {
                 log.warn("Heartbeat gap too large for attendance {}: {}s > {}s — invalidating",

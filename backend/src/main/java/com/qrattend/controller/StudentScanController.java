@@ -8,6 +8,7 @@ import com.qrattend.dto.scan.ScanResponse;
 import com.qrattend.entity.Doubt;
 import com.qrattend.entity.QrSession;
 import com.qrattend.exception.ResourceNotFoundException;
+import com.qrattend.exception.SessionClosedException;
 import com.qrattend.repository.AttendanceRepository;
 import com.qrattend.repository.DoubtRepository;
 import com.qrattend.repository.QrSessionRepository;
@@ -109,6 +110,16 @@ public class StudentScanController {
         com.qrattend.entity.Attendance attendance = attendanceRepository.findById(attendanceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found: " + attendanceId));
         QrSession session = attendance.getSession();
+
+        if (session.isClosed()) {
+            throw new SessionClosedException("Cannot submit doubt — session is closed");
+        }
+
+        // Cap questions per session to prevent database bloat
+        long existingDoubts = doubtRepository.countBySessionId(session.getId());
+        if (existingDoubts >= 100) {
+            throw new IllegalArgumentException("Maximum questions reached for this session");
+        }
 
         Doubt doubt = Doubt.builder()
                 .session(session)

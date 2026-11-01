@@ -116,4 +116,15 @@ class DoubtRepositoryTest {
             doubtRepository.saveAndFlush(invalidDoubt);
         }).isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    @DisplayName("countBySessionId returns exact count of doubts for a session")
+    void countBySessionId() {
+        assertThat(doubtRepository.countBySessionId(session.getId())).isEqualTo(0);
+
+        doubtRepository.save(TestDataFactory.doubt(session, "Question 1"));
+        doubtRepository.saveAndFlush(TestDataFactory.doubt(session, "Question 2"));
+
+        assertThat(doubtRepository.countBySessionId(session.getId())).isEqualTo(2);
+    }
 }

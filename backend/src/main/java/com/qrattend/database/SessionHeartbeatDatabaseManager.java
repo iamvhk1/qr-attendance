@@ -1,5 +1,6 @@
 package com.qrattend.database;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,6 +35,33 @@ public class SessionHeartbeatDatabaseManager {
 
     /** Map of active DataSource / JdbcTemplate instances per session UUID. */
     private final Map<UUID, JdbcTemplate> sessionTemplates = new ConcurrentHashMap<>();
+
+    /**
+     * Cleans up any leftover orphan session database files on application startup
+     * (e.g. if the server previously crashed or was killed while sessions were active).
+     */
+    @PostConstruct
+    public void cleanupOrphanSessionDatabases() {
+        if (storagePath == null || storagePath.equalsIgnoreCase("mem") || storagePath.startsWith("mem:")) {
+            return;
+        }
+        try {
+            File dir = new File(storagePath);
+            if (dir.exists() && dir.isDirectory()) {
+                File[] files = dir.listFiles((d, name) -> name.startsWith("session_") && (name.endsWith(".db") || name.endsWith(".trace.db")));
+                if (files != null && files.length > 0) {
+                    for (File file : files) {
+                        boolean deleted = file.delete();
+                        if (deleted) {
+                            log.info("Cleaned up orphan session database file on startup: {}", file.getName());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not clean up orphan session database files on startup: {}", e.getMessage());
+        }
+    }
 
     /**
      * Initializes an isolated database for a session if not already created.

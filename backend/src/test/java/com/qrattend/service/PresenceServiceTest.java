@@ -222,6 +222,25 @@ class PresenceServiceTest {
         }
 
         @Test
+        @DisplayName("Throttles rapid-fire heartbeats under 1500ms without writing to DB")
+        void throttlesRapidHeartbeats() {
+            attendance.setLastHeartbeatAt(Instant.now()); // Just fired right now
+            HeartbeatRequest req = new HeartbeatRequest("mock-nonce-123", false);
+            when(attendanceRepository.findById(attendanceId)).thenReturn(Optional.of(attendance));
+
+            HeartbeatResponse response = presenceService.recordHeartbeat(attendanceId, req);
+
+            assertThat(response).isNotNull();
+            // Nonce is preserved (not rotated) so client can retry at proper interval
+            assertThat(response.getNextNonce()).isEqualTo("mock-nonce-123");
+            assertThat(response.getStatus()).isEqualTo(AttendanceStatus.PENDING.name());
+
+            // No DB writes should occur on throttled request
+            verify(heartbeatRepository, never()).save(any(UUID.class), anyString());
+            verify(attendanceRepository, never()).save(any(Attendance.class));
+        }
+
+        @Test
         @DisplayName("Throws IllegalArgumentException if nonce is incorrect (replay/tampering)")
         void failsIfNonceIncorrect() {
             HeartbeatRequest req = new HeartbeatRequest("wrong-nonce", false);
