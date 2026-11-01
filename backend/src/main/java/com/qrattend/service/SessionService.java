@@ -2,6 +2,7 @@ package com.qrattend.service;
 
 import com.google.zxing.WriterException;
 import com.qrattend.dto.session.AttendanceResponse;
+import com.qrattend.dto.session.ManualAttendanceRequest;
 import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
@@ -10,7 +11,9 @@ import com.qrattend.entity.AttendanceStatus;
 import com.qrattend.entity.Course;
 import com.qrattend.entity.Professor;
 import com.qrattend.entity.QrSession;
+import com.qrattend.entity.Student;
 import com.qrattend.exception.ForbiddenException;
+import com.qrattend.exception.MaxConcurrentSessionsException;
 import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
 import com.qrattend.repository.AttendanceRepository;
@@ -18,6 +21,7 @@ import com.qrattend.repository.CourseRepository;
 import com.qrattend.repository.HeartbeatRepository;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.repository.QrSessionRepository;
+import com.qrattend.repository.StudentRepository;
 import com.qrattend.security.JwtUtil;
 import com.qrattend.util.QrGenerator;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +34,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -38,7 +43,7 @@ import java.util.stream.Collectors;
  *
  * <p>Responsibilities:</p>
  * <ul>
- *   <li>Create a session with a configurable window (default 120s)</li>
+ *   <li>Create a session with a configurable window (default 120s) and enforced professor concurrency limit</li>
  *   <li>Generate a rolling 15-second QR code PNG on demand</li>
  *   <li>Return session details (including computed LIVE / CLOSED status)</li>
  * </ul>
@@ -64,10 +69,14 @@ public class SessionService {
     private final ProfessorRepository professorRepository;
     private final AttendanceRepository attendanceRepository;
     private final HeartbeatRepository heartbeatRepository;
+    private final StudentRepository studentRepository;
     private final JwtUtil jwtUtil;
 
     @Value("${app.session.default-duration-seconds}")
     private int defaultDurationSeconds;
+
+    @Value("${app.session.max-concurrent-per-professor:1}")
+    private int maxConcurrentSessionsPerProfessor;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -80,17 +89,26 @@ public class SessionService {
     /**
      * Creates a new QR attendance session for the given course.
      *
-     * <p>The session window is set to {@code now + durationSeconds}. If
-     * {@code durationSeconds} is null, the server default (120s) is used.</p>
+     * <p>Enforces a threshold on the number of concurrent active sessions a professor
+     * can run simultaneously. Provisions an isolated session database for heartbeats.</p>
      *
      * @param request     contains courseId and optional durationSeconds
      * @param professorId the authenticated professor's UUID (from JWT)
      * @return the created session as a response DTO
-     * @throws ResourceNotFoundException if the course does not exist
-     * @throws ForbiddenException        if the professor does not own the course
+     * @throws MaxConcurrentSessionsException if the professor has reached the active session limit
+     * @throws ResourceNotFoundException      if the course does not exist
+     * @throws ForbiddenException             if the professor does not own the course
      */
     @Transactional
     public SessionResponse createSession(SessionRequest request, UUID professorId) {
+        long activeSessions = sessionRepository.countActiveSessionsByProfessorId(professorId, Instant.now());
+        if (activeSessions >= maxConcurrentSessionsPerProfessor) {
+            throw new MaxConcurrentSessionsException(String.format(
+                "Professor already has %d active session(s). Limit is %d. Please close existing sessions before starting a new one.",
+                activeSessions, maxConcurrentSessionsPerProfessor
+            ));
+        }
+
         Course course = getOwnedCourse(request.getCourseId(), professorId);
         Professor professor = professorRepository.findById(professorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Professor not found"));
@@ -108,8 +126,12 @@ public class SessionService {
                 .build();
 
         QrSession saved = sessionRepository.save(session);
-        log.info("Session created: {} for course {} by professor {} (window: {}s)",
-                saved.getId(), course.getId(), professorId, duration);
+
+        // Initialize dedicated, isolated database for this session's heartbeats
+        heartbeatRepository.initSessionDatabase(saved.getId());
+
+        log.info("Session created: {} for course {} by professor {} (active: {}/{}, window: {}s)",
+                saved.getId(), course.getId(), professorId, activeSessions + 1, maxConcurrentSessionsPerProfessor, duration);
 
         return SessionResponse.fromEntity(saved);
     }
@@ -249,6 +271,9 @@ public class SessionService {
 
         QrSession saved = sessionRepository.save(session);
 
+        // Clean up and drop the isolated session database
+        heartbeatRepository.closeSessionDatabase(sessionId);
+
         log.info("Session {} manually closed by professor {} — finalised {} attendance record(s)",
                 sessionId, professorId, pending.size());
 
@@ -323,7 +348,69 @@ public class SessionService {
                 .toList();
     }
 
+    // ── Manual Attendance ─────────────────────────────────────
+
+    /**
+     * Manually adds a CONFIRMED attendance record for a student who could not scan the QR.
+     *
+     * <p>Validates that the professor owns the session and that the student is enrolled
+     * in the course. If the student already has an attendance record for this session,
+     * the existing record is promoted to CONFIRMED rather than creating a duplicate.</p>
+     *
+     * @param sessionId   the session UUID
+     * @param professorId the authenticated professor's UUID
+     * @param request     contains the student's roll number and an optional reason
+     * @return the created (or updated) {@link AttendanceResponse}
+     * @throws ResourceNotFoundException if the session or student does not exist
+     * @throws ForbiddenException        if the professor does not own the session
+     */
+    @Transactional
+    public AttendanceResponse addManualAttendance(UUID sessionId, UUID professorId, ManualAttendanceRequest request) {
+        QrSession session = getOwnedSession(sessionId, professorId);
+        Professor professor = professorRepository.findById(professorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Professor not found"));
+
+        UUID courseId = session.getCourse().getId();
+
+        // Verify the student is enrolled in this course
+        Student enrolledStudent = studentRepository
+                .findByCourseIdAndRollNumber(courseId, request.getRollNumber())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Roll number " + request.getRollNumber() + " is not enrolled in this course"));
+
+        // Idempotency: if a record already exists, just mark it CONFIRMED
+        Optional<Attendance> existing = attendanceRepository
+                .findBySessionIdAndRollNumber(sessionId, request.getRollNumber());
+
+        Attendance attendance;
+        if (existing.isPresent()) {
+            attendance = existing.get();
+            attendance.setStatus(AttendanceStatus.CONFIRMED);
+            attendance.setManuallyAdded(true);
+            attendance.setAddedByProfessor(professor);
+            attendance.setOverrideReason(request.getReason());
+            attendance.setHeartbeatCoverage(1.0f);
+        } else {
+            attendance = Attendance.builder()
+                    .session(session)
+                    .rollNumber(enrolledStudent.getRollNumber())
+                    .studentName(enrolledStudent.getFullName())
+                    .status(AttendanceStatus.CONFIRMED)
+                    .manuallyAdded(true)
+                    .addedByProfessor(professor)
+                    .overrideReason(request.getReason())
+                    .heartbeatCoverage(1.0f)
+                    .build();
+        }
+
+        Attendance saved = attendanceRepository.save(attendance);
+        log.info("Manual attendance added: student={} session={} by professor={} reason={}",
+                request.getRollNumber(), sessionId, professorId, request.getReason());
+        return AttendanceResponse.fromEntity(saved);
+    }
+
     // ── Manual Override ───────────────────────────────────────
+
 
     /**
      * Manually overrides an attendance record's status.

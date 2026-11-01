@@ -142,21 +142,24 @@ class PresenceServiceTest {
         }
 
         @Test
-        @DisplayName("Returns existing attendance idempotently if student already scanned")
+        @DisplayName("Resets and re-registers attendance idempotently if student rescans")
         void returnsExistingIfAlreadyScanned() {
             ScanRequest req = new ScanRequest(rollNumber, null);
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
             when(studentRepository.findByCourseIdAndRollNumber(courseId, rollNumber)).thenReturn(Optional.of(student));
             when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, rollNumber)).thenReturn(Optional.of(attendance));
+            when(attendanceRepository.save(any())).thenReturn(attendance);
             when(jwtUtil.generateAttendanceToken(attendanceId)).thenReturn("mock-attendance-jwt");
+            doNothing().when(heartbeatRepository).deleteBySessionIdAndRollNumber(sessionId, rollNumber);
 
             ScanResponse response = presenceService.submitScan(sessionId, req);
 
             assertThat(response.getAttendanceId()).isEqualTo(attendanceId);
-            assertThat(response.getInitialNonce()).isEqualTo("mock-nonce-123"); // From existing attendance
-            // Must NOT create a new record
-            verify(attendanceRepository, never()).save(any());
+            // Code resets the record and saves it — must call save exactly once
+            verify(attendanceRepository, times(1)).save(any());
+            // Old heartbeats must be wiped for the fresh-start window
+            verify(heartbeatRepository).deleteBySessionIdAndRollNumber(sessionId, rollNumber);
         }
 
         @Test
@@ -206,7 +209,6 @@ class PresenceServiceTest {
         void success() {
             HeartbeatRequest req = new HeartbeatRequest("mock-nonce-123", false);
             when(attendanceRepository.findById(attendanceId)).thenReturn(Optional.of(attendance));
-            when(heartbeatRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             HeartbeatResponse response = presenceService.recordHeartbeat(attendanceId, req);
 
@@ -214,7 +216,7 @@ class PresenceServiceTest {
             assertThat(response.getNextNonce()).isNotBlank().isNotEqualTo("mock-nonce-123");
             assertThat(response.getStatus()).isEqualTo(AttendanceStatus.PENDING.name());
 
-            verify(heartbeatRepository).save(any(Heartbeat.class));
+            verify(heartbeatRepository).save(eq(attendance.getSession().getId()), eq(attendance.getRollNumber()));
             // Nonce must be rotated on the entity
             assertThat(attendance.getCurrentNonce()).isEqualTo(response.getNextNonce());
         }
@@ -231,7 +233,7 @@ class PresenceServiceTest {
 
             // Nonce must NOT be changed on a failed attempt
             assertThat(attendance.getCurrentNonce()).isEqualTo("mock-nonce-123");
-            verify(heartbeatRepository, never()).save(any());
+            verify(heartbeatRepository, never()).save(any(UUID.class), anyString());
         }
 
         @Test
@@ -249,7 +251,7 @@ class PresenceServiceTest {
             assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.INVALIDATED);
             verify(attendanceRepository).save(attendance);
             // No heartbeat must be recorded
-            verify(heartbeatRepository, never()).save(any());
+            verify(heartbeatRepository, never()).save(any(UUID.class), anyString());
         }
 
         @Test

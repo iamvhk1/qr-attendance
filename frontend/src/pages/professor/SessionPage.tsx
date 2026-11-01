@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square, Plus, PenLine, X } from 'lucide-react';
+import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square, Plus, PenLine, X, UserPlus } from 'lucide-react';
 import { Card, CardHeader, CardBody, Button, Badge, Loader } from '../../components/ui';
 import { apiFetch, ApiError } from '../../lib/api';
 import { useToast } from '../../hooks/useToast';
@@ -128,6 +128,81 @@ const OverrideModal: React.FC<OverrideModalProps> = ({ record, onClose, onSaved 
   );
 };
 
+// ── Manual Attendance Modal ────────────────────────────
+
+interface ManualAttendanceModalProps {
+  sessionId: string;
+  onClose: () => void;
+  onSaved: (created: AttendanceResponse) => void;
+}
+
+const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({ sessionId, onClose, onSaved }) => {
+  const [rollNumber, setRollNumber] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const handleSave = async () => {
+    if (!rollNumber.trim()) { setErr('Roll number is required'); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      const created = await apiFetch<AttendanceResponse>(
+        `/sessions/${sessionId}/attendance/manual`,
+        { method: 'POST', body: JSON.stringify({ rollNumber: rollNumber.trim(), reason: reason.trim() || undefined }) },
+      );
+      onSaved(created);
+    } catch (e: unknown) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to mark attendance');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Manual attendance">
+      <div className="modal-box">
+        <div className="modal-header">
+          <h3>Mark Manual Attendance</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="modal-body">
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+            Mark a student as <strong>Confirmed</strong> without requiring a QR scan. The student must be enrolled in this course.
+          </p>
+          <div className="modal-field">
+            <label htmlFor="manual-roll">Roll Number</label>
+            <input
+              id="manual-roll"
+              type="text"
+              value={rollNumber}
+              onChange={(e) => setRollNumber(e.target.value)}
+              placeholder="e.g. 22CS101"
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            />
+          </div>
+          <div className="modal-field">
+            <label htmlFor="manual-reason">Reason (optional)</label>
+            <textarea
+              id="manual-reason"
+              rows={2}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Device issue, no smartphone..."
+            />
+          </div>
+          {err && <p className="modal-error">{err}</p>}
+        </div>
+        <div className="modal-footer">
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} loading={saving}>Mark Confirmed</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Attendance Table ──────────────────────────────────────────────
 
 const STATUS_CONFIG = {
@@ -248,6 +323,7 @@ const SessionPage: React.FC = () => {
   const [extending, setExtending]       = useState(false);
   const [secondsLeft, setSecondsLeft]   = useState(0);
   const [overrideTarget, setOverrideTarget] = useState<AttendanceResponse | null>(null);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
   const [congestionMode, setCongestionMode] = useState(false);
 
   const qrIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -621,7 +697,20 @@ const SessionPage: React.FC = () => {
           <CardHeader
             title={`Attendance (${attendance.length})`}
             subtitle={isLive ? 'Auto-refreshing every 5 seconds' : 'Final records'}
-            action={isLive ? <span className="live-indicator"><span className="live-dot" aria-hidden="true" />Live</span> : undefined}
+            action={
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <Button
+                  variant="ghost"
+                  leftIcon={<UserPlus size={14} />}
+                  onClick={() => setManualModalOpen(true)}
+                  id="manual-attendance-btn"
+                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem' }}
+                >
+                  Mark Manual
+                </Button>
+                {isLive && <span className="live-indicator"><span className="live-dot" aria-hidden="true" />Live</span>}
+              </div>
+            }
           />
           <CardBody>
             <AttendanceTable records={attendance} onOverride={setOverrideTarget} />
@@ -653,6 +742,22 @@ const SessionPage: React.FC = () => {
       </div>
 
       <ToastViewport toasts={toasts} onRemove={removeToast} />
+
+      {/* Manual attendance modal */}
+      {manualModalOpen && sessionId && (
+        <ManualAttendanceModal
+          sessionId={sessionId}
+          onClose={() => setManualModalOpen(false)}
+          onSaved={(created) => {
+            setAttendance((prev) => {
+              const idx = prev.findIndex((r) => r.id === created.id);
+              return idx >= 0 ? prev.map((r) => r.id === created.id ? created : r) : [...prev, created];
+            });
+            setManualModalOpen(false);
+            success('Manual attendance marked', `${created.studentName} marked as Confirmed.`);
+          }}
+        />
+      )}
 
       {/* Override modal */}
       {overrideTarget && (

@@ -2,6 +2,7 @@ package com.qrattend.service;
 
 import com.google.zxing.WriterException;
 import com.qrattend.dto.session.AttendanceResponse;
+import com.qrattend.dto.session.ManualAttendanceRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.entity.Attendance;
@@ -9,7 +10,9 @@ import com.qrattend.entity.AttendanceStatus;
 import com.qrattend.entity.Course;
 import com.qrattend.entity.Professor;
 import com.qrattend.entity.QrSession;
+import com.qrattend.entity.Student;
 import com.qrattend.exception.ForbiddenException;
+import com.qrattend.exception.MaxConcurrentSessionsException;
 import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
 import com.qrattend.repository.AttendanceRepository;
@@ -17,6 +20,7 @@ import com.qrattend.repository.CourseRepository;
 import com.qrattend.repository.HeartbeatRepository;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.repository.QrSessionRepository;
+import com.qrattend.repository.StudentRepository;
 import com.qrattend.security.JwtUtil;
 import com.qrattend.util.QrGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +60,7 @@ class SessionServiceTest {
     @Mock private ProfessorRepository professorRepository;
     @Mock private AttendanceRepository attendanceRepository;
     @Mock private HeartbeatRepository heartbeatRepository;
+    @Mock private StudentRepository studentRepository;
     @Mock private JwtUtil jwtUtil;
 
     @InjectMocks private SessionService sessionService;
@@ -94,6 +99,7 @@ class SessionServiceTest {
 
         // Inject @Value fields that Spring would normally inject
         ReflectionTestUtils.setField(sessionService, "defaultDurationSeconds", 120);
+        ReflectionTestUtils.setField(sessionService, "maxConcurrentSessionsPerProfessor", 1);
         ReflectionTestUtils.setField(sessionService, "frontendUrl", "http://localhost:5173");
     }
 
@@ -242,6 +248,24 @@ class SessionServiceTest {
             assertThat(result.getClosedAt()).isNull();
             assertThat(result.getExtendedCount()).isEqualTo(0);
         }
+
+        @Test
+        @DisplayName("Throws MaxConcurrentSessionsException if professor already has max active sessions")
+        void throwsWhenActiveSessionsThresholdReached() {
+            SessionRequest req = SessionRequest.builder()
+                    .courseId(courseId)
+                    .durationSeconds(60)
+                    .build();
+
+            when(sessionRepository.countActiveSessionsByProfessorId(eq(profId), any(Instant.class)))
+                    .thenReturn(1L);
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> sessionService.createSession(req, profId))
+                    .isInstanceOf(MaxConcurrentSessionsException.class)
+                    .hasMessageContaining("Professor already has 1 active session(s)");
+
+            org.mockito.Mockito.verify(sessionRepository, org.mockito.Mockito.never()).save(any());
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -368,7 +392,7 @@ class SessionServiceTest {
                     .build();
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
-            when(jwtUtil.generateScanToken(sessionId)).thenReturn("mock-scan-token");
+            when(jwtUtil.generateScanToken(sessionId, false)).thenReturn("mock-scan-token");
 
             try (MockedStatic<QrGenerator> qrMock = mockStatic(QrGenerator.class)) {
                 qrMock.when(() -> QrGenerator.generatePng(
@@ -395,7 +419,7 @@ class SessionServiceTest {
                     .build();
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
-            when(jwtUtil.generateScanToken(sessionId))
+            when(jwtUtil.generateScanToken(sessionId, false))
                     .thenReturn("token-first-call", "token-second-call");
 
             try (MockedStatic<QrGenerator> qrMock = mockStatic(QrGenerator.class)) {
@@ -407,7 +431,7 @@ class SessionServiceTest {
             }
 
             // generateScanToken must be called once per invocation — not cached
-            verify(jwtUtil, times(2)).generateScanToken(sessionId);
+            verify(jwtUtil, times(2)).generateScanToken(sessionId, false);
         }
 
         @Test
@@ -486,7 +510,7 @@ class SessionServiceTest {
                     .build();
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
-            when(jwtUtil.generateScanToken(sessionId)).thenReturn("token");
+            when(jwtUtil.generateScanToken(sessionId, false)).thenReturn("token");
 
             try (MockedStatic<QrGenerator> qrMock = mockStatic(QrGenerator.class)) {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
@@ -509,7 +533,7 @@ class SessionServiceTest {
                     .build();
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
-            when(jwtUtil.generateScanToken(sessionId)).thenReturn("token");
+            when(jwtUtil.generateScanToken(sessionId, false)).thenReturn("token");
 
             try (MockedStatic<QrGenerator> qrMock = mockStatic(QrGenerator.class)) {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
@@ -532,7 +556,7 @@ class SessionServiceTest {
                     .build();
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
-            when(jwtUtil.generateScanToken(sessionId)).thenReturn("TEST_JWT");
+            when(jwtUtil.generateScanToken(sessionId, false)).thenReturn("TEST_JWT");
 
             try (MockedStatic<QrGenerator> qrMock = mockStatic(QrGenerator.class)) {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
@@ -558,7 +582,7 @@ class SessionServiceTest {
                     .build();
 
             when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(live));
-            when(jwtUtil.generateScanToken(sessionId)).thenReturn("token");
+            when(jwtUtil.generateScanToken(sessionId, false)).thenReturn("token");
 
             try (MockedStatic<QrGenerator> qrMock = mockStatic(QrGenerator.class)) {
                 qrMock.when(() -> QrGenerator.generatePng(any(), anyInt(), anyInt()))
@@ -892,6 +916,148 @@ class SessionServiceTest {
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getHeartbeatCoverage()).isEqualTo(0.95f);
+        }
+    }
+
+    // ── addManualAttendance ───────────────────────────────────
+
+    @Nested
+    @DisplayName("addManualAttendance(sessionId, profId, request)")
+    class AddManualAttendance {
+
+        private QrSession liveSession;
+        private Student student;
+
+        @BeforeEach
+        void setUp() {
+            liveSession = QrSession.builder()
+                    .id(sessionId)
+                    .course(course)
+                    .professor(professor)
+                    .expiresAt(Instant.now().plus(2, ChronoUnit.MINUTES))
+                    .build();
+
+            student = Student.builder()
+                    .id(UUID.randomUUID())
+                    .course(course)
+                    .rollNumber("CS24B001")
+                    .fullName("Alice Turing")
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Successfully marks manual attendance for enrolled student")
+        void marksManualAttendanceSuccessfully() {
+            ManualAttendanceRequest req = new ManualAttendanceRequest("CS24B001", "Phone dead");
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(professorRepository.findById(profId)).thenReturn(Optional.of(professor));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, "CS24B001")).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, "CS24B001")).thenReturn(Optional.empty());
+            when(attendanceRepository.save(any(Attendance.class))).thenAnswer(inv -> {
+                Attendance saved = inv.getArgument(0);
+                saved.setId(UUID.randomUUID());
+                return saved;
+            });
+
+            AttendanceResponse res = sessionService.addManualAttendance(sessionId, profId, req);
+
+            assertThat(res.getStatus()).isEqualTo("CONFIRMED");
+            assertThat(res.getRollNumber()).isEqualTo("CS24B001");
+            assertThat(res.getStudentName()).isEqualTo("Alice Turing");
+            assertThat(res.isManuallyAdded()).isTrue();
+            assertThat(res.getOverrideReason()).isEqualTo("Phone dead");
+            assertThat(res.getHeartbeatCoverage()).isEqualTo(1.0f);
+        }
+
+        @Test
+        @DisplayName("Idempotently updates existing attendance record to CONFIRMED")
+        void updatesExistingRecordIdempotently() {
+            ManualAttendanceRequest req = new ManualAttendanceRequest("CS24B001", "Scanner glitch");
+            Attendance existing = Attendance.builder()
+                    .id(UUID.randomUUID())
+                    .session(liveSession)
+                    .rollNumber("CS24B001")
+                    .studentName("Alice Turing")
+                    .status(AttendanceStatus.PENDING)
+                    .manuallyAdded(false)
+                    .heartbeatCoverage(0.2f)
+                    .build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(professorRepository.findById(profId)).thenReturn(Optional.of(professor));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, "CS24B001")).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, "CS24B001")).thenReturn(Optional.of(existing));
+            when(attendanceRepository.save(any(Attendance.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            AttendanceResponse res = sessionService.addManualAttendance(sessionId, profId, req);
+
+            assertThat(res.getStatus()).isEqualTo("CONFIRMED");
+            assertThat(res.isManuallyAdded()).isTrue();
+            assertThat(res.getOverrideReason()).isEqualTo("Scanner glitch");
+            assertThat(res.getHeartbeatCoverage()).isEqualTo(1.0f);
+        }
+
+        @Test
+        @DisplayName("Successfully marks manual attendance even after session has ended (closed session)")
+        void worksForClosedSession() {
+            QrSession closedSession = QrSession.builder()
+                    .id(sessionId)
+                    .course(course)
+                    .professor(professor)
+                    .expiresAt(Instant.now().minus(10, ChronoUnit.MINUTES))
+                    .closedAt(Instant.now().minus(5, ChronoUnit.MINUTES))
+                    .build();
+
+            ManualAttendanceRequest req = new ManualAttendanceRequest("CS24B001", "Late manual entry after class");
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(closedSession));
+            when(professorRepository.findById(profId)).thenReturn(Optional.of(professor));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, "CS24B001")).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, "CS24B001")).thenReturn(Optional.empty());
+            when(attendanceRepository.save(any(Attendance.class))).thenAnswer(inv -> {
+                Attendance saved = inv.getArgument(0);
+                saved.setId(UUID.randomUUID());
+                return saved;
+            });
+
+            AttendanceResponse res = sessionService.addManualAttendance(sessionId, profId, req);
+
+            assertThat(res.getStatus()).isEqualTo("CONFIRMED");
+            assertThat(res.getRollNumber()).isEqualTo("CS24B001");
+            assertThat(res.isManuallyAdded()).isTrue();
+            assertThat(res.getOverrideReason()).isEqualTo("Late manual entry after class");
+            assertThat(res.getHeartbeatCoverage()).isEqualTo(1.0f);
+        }
+
+        @Test
+        @DisplayName("Throws ResourceNotFoundException when student is not enrolled in the course")
+        void throwsWhenStudentNotEnrolled() {
+            ManualAttendanceRequest req = new ManualAttendanceRequest("CS24B999", "Not enrolled");
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(professorRepository.findById(profId)).thenReturn(Optional.of(professor));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, "CS24B999")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> sessionService.addManualAttendance(sessionId, profId, req))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("CS24B999");
+
+            verify(attendanceRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Throws ForbiddenException when professor does not own the session")
+        void throwsWhenNotSessionOwner() {
+            ManualAttendanceRequest req = new ManualAttendanceRequest("CS24B001", "Reason");
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+
+            assertThatThrownBy(() -> sessionService.addManualAttendance(sessionId, otherProfId, req))
+                    .isInstanceOf(ForbiddenException.class);
+
+            verifyNoInteractions(studentRepository);
+            verifyNoInteractions(attendanceRepository);
         }
     }
 }

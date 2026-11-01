@@ -2,6 +2,7 @@ package com.qrattend.controller;
 
 import com.qrattend.dto.session.AttendanceResponse;
 import com.qrattend.dto.session.ExtendRequest;
+import com.qrattend.dto.session.ManualAttendanceRequest;
 import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
@@ -150,6 +151,26 @@ public class SessionController {
         int seconds = (request != null) ? request.getAdditionalSeconds() : 60;
         SessionResponse extended = sessionService.extendSession(id, professorId, seconds);
         return ResponseEntity.ok(extended);
+    }
+
+    // ── POST /api/sessions/{id}/attendance/manual ──────────────
+
+    /**
+     * Manually marks a student as CONFIRMED for the given session.
+     *
+     * <p>Use this when a student could not scan the QR (device issue, no phone, etc.).
+     * The student must still be enrolled in the course. If the student already has an
+     * attendance record, it is promoted to CONFIRMED rather than creating a duplicate.</p>
+     *
+     * @return 201 Created with the new (or updated) {@link AttendanceResponse}
+     */
+    @PostMapping("/{id}/attendance/manual")
+    public ResponseEntity<AttendanceResponse> addManualAttendance(
+            @PathVariable UUID id,
+            @Valid @RequestBody ManualAttendanceRequest request) {
+        UUID professorId = getProfessorId();
+        AttendanceResponse created = sessionService.addManualAttendance(id, professorId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     // ── PATCH /api/sessions/attendance/{id}/override ─────────
