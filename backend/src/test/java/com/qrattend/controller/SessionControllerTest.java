@@ -10,6 +10,7 @@ import com.qrattend.exception.SessionClosedException;
 import com.qrattend.security.JwtAuthenticationEntryPoint;
 import com.qrattend.security.JwtAuthenticationFilter;
 import com.qrattend.security.JwtUtil;
+import com.qrattend.repository.DoubtRepository;
 import com.qrattend.service.SessionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +62,7 @@ class SessionControllerTest {
     @MockBean private JwtUtil jwtUtil;
     @MockBean private JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    @MockBean private DoubtRepository doubtRepository;
 
     private final UUID profId    = UUID.randomUUID();
     private final UUID courseId  = UUID.randomUUID();

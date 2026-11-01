@@ -1,0 +1,170 @@
+# ==============================================================================
+#                 QR ATTENDANCE SYSTEM — COMMAND CHEAT SHEET
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 0. PREREQUISITES CHECK
+# ------------------------------------------------------------------------------
+# Check Java version (Must be Java 17 or Java 21)
+java -version
+
+# Check Node.js and NPM
+node -v
+npm -v
+
+# Check Python (for CLI and load tester)
+python --version
+
+
+# ------------------------------------------------------------------------------
+# 1. BACKEND COMMANDS (Run from the backend/ directory)
+# ------------------------------------------------------------------------------
+cd backend
+
+# A. Compilation & Cleaning
+# Compile all source code without running tests
+.\mvnw compile
+
+# Clean previous build artifacts and recompile
+.\mvnw clean compile
+
+# B. Running Tests
+# Run the ENTIRE test suite (all 358 tests)
+.\mvnw test
+
+# Run a specific test class
+.\mvnw test -Dtest=PresenceServiceTest
+.\mvnw test -Dtest=SessionServiceTest
+.\mvnw test -Dtest=CourseControllerTest
+.\mvnw test -Dtest=StudentScanControllerTest
+
+# Run a specific test method within a class
+.\mvnw test -Dtest=PresenceServiceTest#returnsExistingIfAlreadyScanned
+
+# Run tests with detailed stack traces on errors
+.\mvnw test -e
+
+# C. Running the Backend Server
+# Start Spring Boot in development mode (listens on http://localhost:8080)
+.\mvnw spring-boot:run
+
+# Start Spring Boot on a custom port or with custom admin secret
+.\mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=8081 --app.admin.secret=my-secret-key"
+
+# D. Packaging & Running Executable JAR
+# Package into executable JAR (skipping test execution for speed)
+.\mvnw package -DskipTests
+
+# Package with full test verification
+.\mvnw package
+
+# Run the packaged JAR directly
+java -jar target/qr-attendance-0.0.1-SNAPSHOT.jar
+
+
+# ------------------------------------------------------------------------------
+# 2. DATABASE & H2 WEB CONSOLE
+# ------------------------------------------------------------------------------
+# 1. Start the backend: .\mvnw spring-boot:run
+# 2. Open browser: http://localhost:8080/h2-console
+# 3. Enter settings:
+#      Driver Class: org.h2.Driver
+#      JDBC URL:     jdbc:h2:file:./data/qr-attendance-db
+#      User Name:    sa
+#      Password:     (leave blank)
+# 4. Click 'Connect'
+
+
+# ------------------------------------------------------------------------------
+# 3. FRONTEND COMMANDS (Run from the frontend/ directory)
+# ------------------------------------------------------------------------------
+cd frontend
+
+# Install all npm dependencies
+npm install
+
+# Start Vite development server (runs on http://localhost:5173)
+npm run dev
+
+# Production build (TypeScript type-check + Vite minify)
+npm run build
+
+# Run Oxlint code linter
+npm run lint
+
+# Preview production build locally
+npm run preview
+
+
+# ------------------------------------------------------------------------------
+# 4. PYTHON CLI & LOAD TESTING (Run from the cli/ directory)
+# ------------------------------------------------------------------------------
+cd cli
+
+# Install Python requirements
+pip install -r requirements.txt
+
+# Run the Interactive Terminal CLI (Professor flow & terminal QR render)
+python app.py
+
+# Run the Concurrent Load Test (simulates 50+ concurrent students scanning & heartbeating)
+python load_test.py
+
+
+# ------------------------------------------------------------------------------
+# 5. DIRECT API TESTING VIA POWERSHELL (While backend is running on port 8080)
+# ------------------------------------------------------------------------------
+# Step 1: Generate Admin Invite Code
+Invoke-RestMethod -Uri "http://localhost:8080/api/admin/invite" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"adminSecret": "changeme-admin-secret-2026"}'
+
+# Step 2: Register a Professor
+Invoke-RestMethod -Uri "http://localhost:8080/api/auth/register" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{
+    "fullName": "Dr. Alan Turing",
+    "email": "turing@university.edu",
+    "password": "Password123!",
+    "inviteCode": "<PASTE_INVITE_JWT_HERE>"
+  }'
+
+# Step 3: Login as Professor
+$loginRes = Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{
+    "email": "turing@university.edu",
+    "password": "Password123!"
+  }'
+$token = $loginRes.token
+Write-Output "JWT Token: $token"
+
+# Step 4: Create a Course (Authenticated)
+Invoke-RestMethod -Uri "http://localhost:8080/api/courses" `
+  -Method POST `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType "application/json" `
+  -Body '{
+    "code": "CS101",
+    "name": "Data Structures & Algorithms",
+    "semester": "Fall 2026"
+  }'
+
+
+# ------------------------------------------------------------------------------
+# 6. GIT OPERATIONS & WORKSPACE HELPERS
+# ------------------------------------------------------------------------------
+# Check git working tree status
+git status
+
+# Review exact line diffs
+git diff
+
+# Discard local modifications to a specific file
+git restore <file_path>
+
+# View clean commit history
+git log --oneline -n 10

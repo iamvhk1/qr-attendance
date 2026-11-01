@@ -6,7 +6,7 @@ import com.qrattend.dto.session.ManualAttendanceRequest;
 import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
-import com.qrattend.entity.Doubt;
+import com.qrattend.dto.session.DoubtResponse;
 import com.qrattend.repository.DoubtRepository;
 import com.qrattend.service.SessionService;
 import jakarta.validation.Valid;
@@ -215,10 +215,13 @@ public class SessionController {
     // ── GET /api/sessions/{id}/doubts ────────────────────────
 
     @GetMapping("/{id}/doubts")
-    public ResponseEntity<List<Doubt>> getDoubts(@PathVariable UUID id) {
-        // Assume session exists and belongs to professor (enforced by context if needed)
-        // For simplicity, we just fetch them for the given session ID
-        return ResponseEntity.ok(doubtRepository.findBySessionIdOrderByPostedAtAsc(id));
+    public ResponseEntity<List<DoubtResponse>> getDoubts(@PathVariable UUID id) {
+        List<DoubtResponse> dtos = doubtRepository
+                .findBySessionIdOrderByPostedAtAsc(id)
+                .stream()
+                .map(DoubtResponse::from)
+                .toList();
+        return ResponseEntity.ok(dtos);
     }
 
     // ── Helper ───────────────────────────────────────────────

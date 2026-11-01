@@ -1,0 +1,195 @@
+1. check for correctness of the implemented code first, and then list out an exhaustive test set for this module : 
+
+### Phase C: QR Generation (Days 12–14) — ~4–5 hrs
+
+---
+
+#### Day 12 (Sep 6) — Module 11: QR Session Creation
+
+**Time: ~2 hrs**
+
+**Files:**
+- `controller/SessionController.java`
+- `service/SessionService.java`
+- `dto/SessionRequest.java` — `{ courseId, durationSeconds }` (default: 120)
+- `dto/SessionResponse.java` — `{ id, courseId, createdAt, expiresAt, status }`
+
+**Endpoint:**
+
+| Method | Endpoint | What it does |
+|--------|----------|-------------|
+| `POST` | `/api/sessions` | Create a new QR session (set `expiresAt = now + duration`) |
+| `GET` | `/api/sessions/{id}` | Get session details (status, remaining time, etc.) |
+
+**Logic:**
+1. Verify the professor owns the course
+2. Create a `QrSession` entity with `expiresAt = Instant.now() + durationSeconds`
+3. Save to DB
+4. Return session ID + metadata
+
+**✅ Done when:** Create a session → get session by ID → see correct `expiresAt` timestamp.
+
+---
+
+#### Day 13 (Sep 7) — Modules 12 + 13: ZXing QR Generator + Image Endpoint
+
+**Time: ~2.5 hrs**
+
+**Files:**
+- `util/QrGenerator.java`
+- Update `SessionController.java` — add QR image endpoint
+
+**QrGenerator.java:**
+
+```java
+public class QrGenerator {
+    /**
+     * Generates a QR code PNG as a byte array.
+     * @param content The text/URL to encode
+     * @param width   Image width in pixels (e.g., 300)
+     * @param height  Image height in pixels (e.g., 300)
+     * @return PNG bytes
+     */
+    public static byte[] generatePng(String content, int width, int height);
+}
+```
+
+**Implementation:**
+1. Create `BitMatrix` using `QRCodeWriter.encode(content, BarcodeFormat.QR_CODE, width, height)`
+2. Convert to `BufferedImage` using `MatrixToImageWriter.toBufferedImage(bitMatrix)`
+3. Write to `ByteArrayOutputStream` as PNG
+4. Return byte array
+
+**QR image endpoint:**
+
+| Method | Endpoint | What it does |
+|--------|----------|-------------|
+| `GET` | `/api/sessions/{id}/qr` | Generate a short-lived JWT scan token → embed in URL → encode URL as QR PNG → return `image/png` |
+
+**The URL encoded in the QR:**
+```
+https://your-frontend.vercel.app/scan?token=eyJhbGciOiJIUzI1NiJ9...
+```
+
+For local dev, use `http://localhost:5173/scan?token=...`
+
+**Flow:**
+1. Look up session → verify not expired/closed
+2. Generate a 15-second scan JWT: `JwtUtil.generateScanToken(sessionId)`
+3. Build the scan URL: `baseUrl + "/scan?token=" + scanToken`
+4. Generate QR PNG: `QrGenerator.generatePng(scanUrl, 300, 300)`
+5. Return with `Content-Type: image/png`
+
+**✅ Done when:** Hit the endpoint in Postman → see a QR code image. Scan it with your phone camera → opens a URL containing a JWT. Decode the JWT → it contains the session ID and expires in 15 seconds.
+
+
+
+///////////////////////
+
+
+Check the working and correctness for the above phase, The codes have been implemented. Go through them and figure out the implementation correctness.
+
+Later write clear and exhaustive tests for this phase
+
+
+2. reverse method - generating the test suite before implementing the code
+
+" write the tests for this module first. It should cover all possible edge case tests, and check everything  "
+
+### Phase D: Integration Testing + Polish (Days 15–16) — ~2–3 hrs
+
+---
+
+#### Day 14–15 (Sep 8–9) — Full Integration Test
+
+**Time: ~2 hrs**
+
+Run through the **complete professor workflow** in Postman, end-to-end:
+
+```
+1. POST /api/admin/invite                    → get invite code
+2. POST /api/auth/register                   → create professor account
+3. POST /api/auth/login                      → get JWT
+4. POST /api/courses                         → create "Operating Systems (CS5013)"
+5. GET  /api/courses                         → verify course appears
+6. POST /api/courses/{id}/students           → add 2 students manually
+7. POST /api/courses/{id}/students/import    → upload Excel with 10 students
+8. GET  /api/courses/{id}/students           → verify 12 students (2 manual + 10 excel)
+9. POST /api/courses/{id}/students/import    → re-upload modified Excel (roster sync)
+10. GET /api/courses/{id}/students           → verify sync worked correctly
+11. POST /api/sessions                       → start QR session
+12. GET  /api/sessions/{id}/qr               → get QR code PNG
+13. Scan QR with phone → verify URL opens and contains valid JWT
+14. Wait 16 seconds → hit GET /qr again → verify NEW JWT (old one expired)
+```
+
+Fix any bugs found during this flow.
+
+---
+
+#### Day 16 (Sep 10) — Buffer Day
+
+**Time: ~1 hr**
+
+- Fix any remaining bugs
+- Clean up code (remove debug `System.out.println`, add proper error messages)
+- Verify H2 persistence: restart the app → all data survives
+- Prepare design doc if needed
+- **Do NOT start Phase 3.5 (heartbeat) or Phase 4 (SSE) — those are for the Oct 9 milestone**
+
+---
+
+
+
+//////////////////////
+
+
+look throguht this plan of the last phase, and give out an extensive testing and debugging plan which clearly checks the correctness. Do not miss out on any possibility
+
+3. Helping out during the debugging sessions by the agent : 
+Agent went on a seemingly endless loop trying to fix the error, but did not notice that it was due to the change in persistence settings, which was turned off, but the tests were looking for it, assuming it was switched on.
+
+"for the initial part of testing, the persistence festure of the H2 databse was removed. check that"
+
+image.png
+
+4. generating prototypes for intermediate human testing via terminal:
+
+image.png
+
+5. asking to improve on certain aspects of the initial result of a prompt:
+
+image.png
+
+6. pushing changes into repo after every module checks:
+"do a global sanity check, and then push it into the repo after validating everything"
+
+7. using tree of thought (ToT) to get the best implementation plan:
+
+"[design_document.tex] we need to implement the presence verification engine. Assess what all things are required and what components are needed, and how to do it, in different ways and give out the best implementation workflow."
+
+"[design_document.tex] go through this and decide the next module to be implemented, and make a proper workflow plan to implement it, considering multiple approaches and choosing the best one."
+
+8. trying out the chain of thought (CoT) method:
+"[frontend_workflow_plan.md] go through this and implement phase 1 in the most beneficial and safe way, by creating subtasks and finishing them"
+
+8. giving images of the faulty webpage to fix bugs:
+download.jpg the qr code isn't visible
+
+9. compilation errors pasted as a way to debug:
+"Type '{ children: Element[]; glass: true; accent: true; padding: "lg"; style: CSSProperties; }' is not assignable to type 'IntrinsicAttributes & CardProps'.
+  Property 'style' does not exist on type 'IntrinsicAttributes & CardProps'.ts(2322)
+(property) style: React.CSSProperties
+
+this is in 
+
+ScanPage.tsx
+ . check it out"
+
+10. giving unexpected workings of the inner logic while testing the page for the agent to fix:
+
+"if the session is ended early by the professor then the coverage percentage should be recalculated right?"
+
+11. pasted a lot of compilation error messages which contains the location of failure, which is helpful for it to fix.
+
+12. regularly asked it for check for extensibility to make sure it doesn't hard code the current module into working for the current setup only. These refactors gave points that 

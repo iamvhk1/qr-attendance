@@ -137,10 +137,17 @@ public final class TestDataFactory {
 
     // ── Heartbeat ──────────────────────────────────────────────
 
+    public static Heartbeat heartbeat(String rollNumber) {
+        return Heartbeat.builder()
+                .rollNumber(rollNumber)
+                .receivedAt(java.time.Instant.now())
+                .build();
+    }
+
     public static Heartbeat heartbeat(QrSession session, String rollNumber) {
         return Heartbeat.builder()
-                .session(session)
                 .rollNumber(rollNumber)
+                .receivedAt(java.time.Instant.now())
                 .build();
     }
 

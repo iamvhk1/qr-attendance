@@ -62,6 +62,11 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    @ExceptionHandler(MaxConcurrentSessionsException.class)
+    public ResponseEntity<ErrorResponse> handleMaxConcurrentSessions(MaxConcurrentSessionsException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
     @ExceptionHandler(com.qrattend.exception.AttendanceFraudException.class)
     public ResponseEntity<ErrorResponse> handleAttendanceFraud(com.qrattend.exception.AttendanceFraudException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());

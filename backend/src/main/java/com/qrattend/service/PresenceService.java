@@ -237,12 +237,8 @@ public class PresenceService {
             log.debug("Heartbeat accepted for attendance {}: gap={}s", attendanceId, gapSeconds);
         }
 
-        // 4. Persist the heartbeat ping
-        Heartbeat heartbeat = Heartbeat.builder()
-                .session(attendance.getSession())
-                .rollNumber(attendance.getRollNumber())
-                .build();
-        heartbeatRepository.save(heartbeat);
+        // 4. Persist the heartbeat ping into the session's isolated database
+        heartbeatRepository.save(attendance.getSession().getId(), attendance.getRollNumber());
 
         // 5. Update the last heartbeat timestamp for future recovery gap checks
         attendance.setLastHeartbeatAt(Instant.now());
@@ -322,6 +318,9 @@ public class PresenceService {
                 session.setClosedAt(Instant.now());
                 sessionRepository.save(session);
             }
+
+            // Clean up and drop the isolated session database
+            heartbeatRepository.closeSessionDatabase(session.getId());
         }
     }
 

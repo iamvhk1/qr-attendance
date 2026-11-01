@@ -10,6 +10,7 @@ import com.qrattend.security.JwtAuthenticationEntryPoint;
 import com.qrattend.security.JwtAuthenticationFilter;
 import com.qrattend.security.JwtUtil;
 import com.qrattend.service.CourseService;
+import com.qrattend.service.SessionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,7 @@ class CourseControllerTest {
     @Autowired private ObjectMapper objectMapper;
 
     @MockBean private CourseService courseService;
+    @MockBean private SessionService sessionService;
     @MockBean private JwtUtil jwtUtil;
     @MockBean private JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;

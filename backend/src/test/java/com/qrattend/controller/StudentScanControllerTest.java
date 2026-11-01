@@ -6,6 +6,9 @@ import com.qrattend.dto.scan.HeartbeatResponse;
 import com.qrattend.dto.scan.ScanRequest;
 import com.qrattend.dto.scan.ScanResponse;
 import com.qrattend.entity.AttendanceStatus;
+import com.qrattend.repository.AttendanceRepository;
+import com.qrattend.repository.DoubtRepository;
+import com.qrattend.repository.QrSessionRepository;
 import com.qrattend.service.PresenceService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +51,15 @@ class StudentScanControllerTest {
 
     @MockBean
     private com.qrattend.security.JwtUtil jwtUtil;
+
+    @MockBean
+    private DoubtRepository doubtRepository;
+
+    @MockBean
+    private AttendanceRepository attendanceRepository;
+
+    @MockBean
+    private QrSessionRepository qrSessionRepository;
 
     /** Clear SecurityContextHolder after each test to avoid cross-test pollution. */
     @AfterEach
