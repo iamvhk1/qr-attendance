@@ -45,5 +45,17 @@ __pycache__/
 .venv/
 venv/
 
-# === Documentation ===
+# === Documentation & Reports ===
 BACKEND_ARCHITECTURE.md
+engineering_principles_report.md
+engineering_principles_report.tex
+design_document.tex
+presentation.md
+doubts
+commands.txt
+prompts.txt
+
+# === Local runners & Makefiles ===
+make.bat
+make.ps1
+/Makefile

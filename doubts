@@ -1,2 +1,0 @@
-1. How is the authentication happening when i haven't pushed the creds into the github repo?
-2. Is the admin secret also pushed into github? because if so, then anyone can access it and create accounts right?
