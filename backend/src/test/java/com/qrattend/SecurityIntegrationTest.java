@@ -1061,6 +1061,28 @@ class SecurityIntegrationTest {
             assertThat(result.getResponse().getHeader("Content-Disposition")).isNull();
         }
 
+        @Test
+        @DisplayName("B cannot view A's course attendance report → 403, no student data leaked")
+        void cannotViewCourseReport() throws Exception {
+            enrolInCourseA("CS24B107");
+
+            MvcResult result = mockMvc.perform(get("/api/reports/courses/" + courseA)
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden())
+                    .andReturn();
+
+            assertThat(result.getResponse().getContentAsString())
+                    .doesNotContain("CS24B107")
+                    .doesNotContain("Student CS24B107");
+        }
+
+        @Test
+        @DisplayName("Course attendance report without a token → 401")
+        void courseReportWithoutTokenIs401() throws Exception {
+            mockMvc.perform(get("/api/reports/courses/" + courseA))
+                    .andExpect(status().isUnauthorized());
+        }
+
         // ── Positive control ────────────────────────────────────────
 
         @Test
@@ -1092,6 +1114,9 @@ class SecurityIntegrationTest {
                             .header("Authorization", "Bearer " + jwtA))
                     .andExpect(status().isOk());
             mockMvc.perform(get("/api/reports/courses/" + courseA + "/excel")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/reports/courses/" + courseA)
                             .header("Authorization", "Bearer " + jwtA))
                     .andExpect(status().isOk());
             mockMvc.perform(patch("/api/sessions/" + sessionA + "/extend")

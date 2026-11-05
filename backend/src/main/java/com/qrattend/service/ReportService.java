@@ -1,6 +1,8 @@
 package com.qrattend.service;
 
+import com.qrattend.dto.report.CourseAttendanceReport;
 import com.qrattend.entity.Attendance;
+import com.qrattend.entity.AttendanceStatus;
 import com.qrattend.entity.QrSession;
 import com.qrattend.entity.Course;
 import com.qrattend.entity.Student;
@@ -22,9 +24,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -176,8 +182,22 @@ public class ReportService {
         }
     }
 
+    // ── Course-wide attendance report ─────────────────────────
+
+    /**
+     * Builds the course-wide attendance matrix: every enrolled student against every
+     * session of the course. See {@link CourseAttendanceReport} for the counting rules.
+     *
+     * <p>Runs three queries regardless of course size: students, sessions, and all
+     * attendance records of the course.</p>
+     *
+     * @param courseId    the course UUID
+     * @param professorId the authenticated professor's UUID (ownership check)
+     * @throws ResourceNotFoundException if the course does not exist
+     * @throws ForbiddenException        if the professor does not own the course
+     */
     @Transactional(readOnly = true)
-    public byte[] generateCourseExcel(UUID courseId, UUID professorId) {
+    public CourseAttendanceReport buildCourseReport(UUID courseId, UUID professorId) {
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
 
@@ -185,23 +205,106 @@ public class ReportService {
             throw new ForbiddenException("You do not own this course");
         }
 
-        List<Student> students = studentRepository.findByCourseId(courseId);
-        List<QrSession> sessions = sessionRepository.findByCourseIdOrderByCreatedAtDesc(courseId);
-        
-        // rollNumber -> session.id -> Attendance
-        Map<String, Map<UUID, Attendance>> studentAttendanceMap = new HashMap<>();
-        for (Student s : students) {
-            studentAttendanceMap.put(s.getRollNumber(), new HashMap<>());
+        List<Student> students = studentRepository.findByCourseId(courseId).stream()
+                .sorted(Comparator.comparing(Student::getRollNumber))
+                .toList();
+
+        // Oldest first, so the matrix reads left-to-right in time order.
+        List<QrSession> sessions = new ArrayList<>(sessionRepository.findByCourseIdOrderByCreatedAtDesc(courseId));
+        Collections.reverse(sessions);
+
+        // session id -> roll number -> status
+        Map<UUID, Map<String, AttendanceStatus>> statusBySession = new HashMap<>();
+        for (Attendance a : attendanceRepository.findAllByCourseId(courseId)) {
+            statusBySession
+                    .computeIfAbsent(a.getSession().getId(), k -> new HashMap<>())
+                    .put(a.getRollNumber(), a.getStatus());
         }
 
-        for (QrSession session : sessions) {
-            List<Attendance> records = attendanceRepository.findBySessionId(session.getId());
-            for (Attendance a : records) {
-                if (studentAttendanceMap.containsKey(a.getRollNumber())) {
-                    studentAttendanceMap.get(a.getRollNumber()).put(session.getId(), a);
+        Set<String> enrolled = students.stream().map(Student::getRollNumber).collect(Collectors.toSet());
+
+        // ── Session columns ──
+        List<CourseAttendanceReport.SessionColumn> columns = new ArrayList<>();
+        int countedSessions = 0;
+        for (QrSession s : sessions) {
+            boolean closed = s.isClosed();
+            if (closed) countedSessions++;
+            Map<String, AttendanceStatus> byRoll = statusBySession.getOrDefault(s.getId(), Map.of());
+            int confirmed = (int) byRoll.entrySet().stream()
+                    .filter(e -> enrolled.contains(e.getKey()) && e.getValue() == AttendanceStatus.CONFIRMED)
+                    .count();
+            columns.add(CourseAttendanceReport.SessionColumn.builder()
+                    .id(s.getId())
+                    .createdAt(s.getCreatedAt())
+                    .status(closed ? "CLOSED" : "LIVE")
+                    .counted(closed)
+                    .confirmedCount(confirmed)
+                    .build());
+        }
+
+        // ── Student rows ──
+        List<CourseAttendanceReport.StudentRow> rows = new ArrayList<>();
+        double percentageSum = 0;
+        int withPercentage = 0;
+        int belowThresholdCount = 0;
+        for (Student student : students) {
+            List<String> cells = new ArrayList<>(sessions.size());
+            int attended = 0;
+            for (int i = 0; i < sessions.size(); i++) {
+                AttendanceStatus status = statusBySession
+                        .getOrDefault(sessions.get(i).getId(), Map.of())
+                        .get(student.getRollNumber());
+                cells.add(status == null ? CourseAttendanceReport.ABSENT : status.name());
+                if (columns.get(i).isCounted() && status == AttendanceStatus.CONFIRMED) {
+                    attended++;
                 }
             }
+
+            Double percentage = countedSessions == 0 ? null : roundOneDecimal(100.0 * attended / countedSessions);
+            boolean below = percentage != null && percentage < CourseAttendanceReport.LOW_ATTENDANCE_THRESHOLD;
+            if (percentage != null) {
+                percentageSum += percentage;
+                withPercentage++;
+            }
+            if (below) belowThresholdCount++;
+
+            rows.add(CourseAttendanceReport.StudentRow.builder()
+                    .rollNumber(student.getRollNumber())
+                    .fullName(student.getFullName())
+                    .attended(attended)
+                    .total(countedSessions)
+                    .percentage(percentage)
+                    .belowThreshold(below)
+                    .cells(cells)
+                    .build());
         }
+
+        CourseAttendanceReport.Summary summary = CourseAttendanceReport.Summary.builder()
+                .studentCount(students.size())
+                .countedSessions(countedSessions)
+                .liveSessions(sessions.size() - countedSessions)
+                .averagePercentage(withPercentage == 0 ? null : roundOneDecimal(percentageSum / withPercentage))
+                .belowThresholdCount(belowThresholdCount)
+                .threshold(CourseAttendanceReport.LOW_ATTENDANCE_THRESHOLD)
+                .build();
+
+        return CourseAttendanceReport.builder()
+                .courseId(course.getId())
+                .courseName(course.getName())
+                .courseCode(course.getCode())
+                .sessions(columns)
+                .students(rows)
+                .summary(summary)
+                .build();
+    }
+
+    /**
+     * Renders the course-wide report as an Excel workbook. The numbers come from
+     * {@link #buildCourseReport}, so the file always matches the in-browser view.
+     */
+    @Transactional(readOnly = true)
+    public byte[] generateCourseExcel(UUID courseId, UUID professorId) {
+        CourseAttendanceReport report = buildCourseReport(courseId, professorId);
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Consolidated Report");
@@ -216,81 +319,93 @@ public class ReportService {
             CellStyle confirmedStyle = workbook.createCellStyle();
             confirmedStyle.setFillForegroundColor(IndexedColors.LIGHT_GREEN.getIndex());
             confirmedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            
+
             CellStyle invalidatedStyle = workbook.createCellStyle();
             invalidatedStyle.setFillForegroundColor(IndexedColors.ROSE.getIndex());
             invalidatedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
-            // Title
+            // Row 0: title
             Row titleRow = sheet.createRow(0);
-            titleRow.createCell(0).setCellValue("Consolidated Report — " + course.getName());
+            titleRow.createCell(0).setCellValue("Consolidated Report — " + report.getCourseName()
+                    + " (" + report.getCourseCode() + ")");
             sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 5));
 
-            // Headers
+            // Row 1: counting note
+            CourseAttendanceReport.Summary summary = report.getSummary();
+            Row noteRow = sheet.createRow(1);
+            String note = "Counted sessions: " + summary.getCountedSessions();
+            if (summary.getLiveSessions() > 0) {
+                note += " (" + summary.getLiveSessions() + " live session(s) shown but not counted)";
+            }
+            noteRow.createCell(0).setCellValue(note);
+
+            // Row 2: headers
             Row headerRow = sheet.createRow(2);
-            headerRow.createCell(0).setCellValue("Roll No");
-            headerRow.createCell(1).setCellValue("Name");
-            headerRow.createCell(2).setCellValue("Total Classes");
-            headerRow.createCell(3).setCellValue("Attended");
-            headerRow.createCell(4).setCellValue("Attendance %");
-
-            int col = 5;
-            DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MMM dd, yyyy").withZone(ZoneId.systemDefault());
-            for (QrSession session : sessions) {
-                headerRow.createCell(col++).setCellValue(DATE_FMT.format(session.getCreatedAt()));
+            List<String> headers = new ArrayList<>(List.of("Roll No", "Name", "Total Classes", "Attended", "Attendance %"));
+            DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm").withZone(ZoneId.systemDefault());
+            for (CourseAttendanceReport.SessionColumn s : report.getSessions()) {
+                String label = s.getCreatedAt() != null ? dateFmt.format(s.getCreatedAt()) : "Session";
+                headers.add(s.isCounted() ? label : label + " (live)");
             }
-            for (int i = 0; i < col; i++) {
-                headerRow.getCell(i).setCellStyle(headerStyle);
+            for (int i = 0; i < headers.size(); i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers.get(i));
+                cell.setCellStyle(headerStyle);
             }
 
-            // Data
+            // Rows 3+: one per student
             int rowIdx = 3;
-            for (Student student : students) {
+            for (CourseAttendanceReport.StudentRow student : report.getStudents()) {
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(student.getRollNumber());
                 row.createCell(1).setCellValue(student.getFullName());
+                row.createCell(2).setCellValue(student.getTotal());
+                row.createCell(3).setCellValue(student.getAttended());
 
-                int attended = 0;
-                Map<UUID, Attendance> attMap = studentAttendanceMap.get(student.getRollNumber());
-                for (QrSession session : sessions) {
-                    Attendance a = attMap.get(session.getId());
-                    if (a != null && a.getStatus() == com.qrattend.entity.AttendanceStatus.CONFIRMED) {
-                        attended++;
-                    }
-                }
+                Cell pctCell = row.createCell(4);
+                pctCell.setCellValue(student.getPercentage() == null
+                        ? "—" : String.format("%.1f%%", student.getPercentage()));
+                if (student.isBelowThreshold()) pctCell.setCellStyle(invalidatedStyle);
 
-                row.createCell(2).setCellValue(sessions.size());
-                row.createCell(3).setCellValue(attended);
-                double percentage = sessions.isEmpty() ? 0 : (double) attended / sessions.size() * 100;
-                row.createCell(4).setCellValue(String.format("%.1f%%", percentage));
-
-                int cIdx = 5;
-                for (QrSession session : sessions) {
-                    Attendance a = attMap.get(session.getId());
-                    Cell cell = row.createCell(cIdx++);
-                    if (a == null) {
+                int col = 5;
+                for (String status : student.getCells()) {
+                    Cell cell = row.createCell(col++);
+                    if (CourseAttendanceReport.ABSENT.equals(status)) {
                         cell.setCellValue("Absent");
                     } else {
-                        cell.setCellValue(a.getStatus().name());
-                        if (a.getStatus() == com.qrattend.entity.AttendanceStatus.CONFIRMED) {
-                            cell.setCellStyle(confirmedStyle);
-                        } else if (a.getStatus() == com.qrattend.entity.AttendanceStatus.INVALIDATED) {
-                            cell.setCellStyle(invalidatedStyle);
-                        }
+                        cell.setCellValue(status);
+                        if (AttendanceStatus.CONFIRMED.name().equals(status)) cell.setCellStyle(confirmedStyle);
+                        else if (AttendanceStatus.INVALIDATED.name().equals(status)) cell.setCellStyle(invalidatedStyle);
                     }
                 }
             }
 
-            for (int i = 0; i < col; i++) {
+            // Summary
+            rowIdx++;
+            Row avgRow = sheet.createRow(rowIdx++);
+            avgRow.createCell(0).setCellValue("Average attendance:");
+            avgRow.createCell(1).setCellValue(summary.getAveragePercentage() == null
+                    ? "—" : String.format("%.1f%%", summary.getAveragePercentage()));
+            Row belowRow = sheet.createRow(rowIdx);
+            belowRow.createCell(0).setCellValue(String.format("Below %.0f%%:", summary.getThreshold()));
+            belowRow.createCell(1).setCellValue(summary.getBelowThresholdCount());
+
+            for (int i = 0; i < headers.size(); i++) {
                 sheet.autoSizeColumn(i);
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
+            log.info("Course Excel report generated for course {} ({} students, {} sessions)",
+                    courseId, report.getStudents().size(), report.getSessions().size());
             return out.toByteArray();
         } catch (IOException e) {
             log.error("Failed to generate course Excel report", e);
             throw new RuntimeException("Failed to generate course report", e);
         }
+    }
+
+    private static double roundOneDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 }

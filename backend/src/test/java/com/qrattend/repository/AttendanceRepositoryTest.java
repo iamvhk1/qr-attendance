@@ -228,4 +228,49 @@ class AttendanceRepositoryTest {
         assertThat(found.getStatus()).isEqualTo(AttendanceStatus.INVALIDATED);
         assertThat(found.getHeartbeatCoverage()).isEqualTo(0.45f);
     }
+
+    // ── Course-wide query (course attendance report) ─────────
+
+    @Test
+    @DisplayName("findAllByCourseId returns records from every session of the course, and only that course")
+    void findAllByCourseIdSpansSessionsAndIsCourseScoped() {
+        QrSession secondSession = entityManager.persistAndFlush(TestDataFactory.closedSession(course, professor));
+        Course otherCourse = entityManager.persistAndFlush(TestDataFactory.course(professor, "CS9999"));
+        QrSession otherSession = entityManager.persistAndFlush(TestDataFactory.liveSession(otherCourse, professor));
+
+        attendanceRepository.save(TestDataFactory.confirmedAttendance(session, "CS24B001"));
+        attendanceRepository.save(TestDataFactory.pendingAttendance(secondSession, "CS24B002"));
+        attendanceRepository.save(TestDataFactory.confirmedAttendance(otherSession, "CS24B003"));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Attendance> found = attendanceRepository.findAllByCourseId(course.getId());
+
+        assertThat(found).extracting(Attendance::getRollNumber)
+                .containsExactlyInAnyOrder("CS24B001", "CS24B002");
+        assertThat(found).extracting(a -> a.getSession().getId())
+                .containsExactlyInAnyOrder(session.getId(), secondSession.getId());
+    }
+
+    @Test
+    @DisplayName("findAllByCourseId fetches the session eagerly (usable after the persistence context is cleared)")
+    void findAllByCourseIdFetchesSession() {
+        attendanceRepository.save(TestDataFactory.confirmedAttendance(session, "CS24B001"));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Attendance> found = attendanceRepository.findAllByCourseId(course.getId());
+        entityManager.clear();   // detach: a lazy proxy would now throw on access
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).getSession().getCreatedAt()).isNotNull();
+        assertThat(found.get(0).getSession().getId()).isEqualTo(session.getId());
+        assertThat(found.get(0).getSession().getExpiresAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("findAllByCourseId returns an empty list for a course with no attendance")
+    void findAllByCourseIdEmpty() {
+        assertThat(attendanceRepository.findAllByCourseId(course.getId())).isEmpty();
+    }
 }

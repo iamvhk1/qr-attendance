@@ -17,6 +17,14 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
 
     List<Attendance> findBySessionId(UUID sessionId);
 
+    /**
+     * Every attendance record across all sessions of a course, in a single query.
+     * The session is fetched eagerly so callers can group by session without
+     * triggering one extra query per record. Used by the course attendance report.
+     */
+    @Query("SELECT a FROM Attendance a JOIN FETCH a.session s WHERE s.course.id = :courseId")
+    List<Attendance> findAllByCourseId(@Param("courseId") UUID courseId);
+
     Optional<Attendance> findBySessionIdAndRollNumber(UUID sessionId, String rollNumber);
 
     boolean existsBySessionIdAndRollNumber(UUID sessionId, String rollNumber);

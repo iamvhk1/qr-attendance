@@ -1,5 +1,6 @@
 package com.qrattend.controller;
 
+import com.qrattend.dto.report.CourseAttendanceReport;
 import com.qrattend.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ContentDisposition;
@@ -18,9 +19,12 @@ import java.util.UUID;
  * <p>All endpoints are protected by {@code ROLE_PROFESSOR} (enforced globally
  * in {@code SecurityConfig} via the {@code /api/reports/**} pattern).</p>
  *
- * <p>Reports are streamed as file downloads using {@code Content-Disposition: attachment}.
+ * <p>The {@code /excel} endpoints stream file downloads using {@code Content-Disposition: attachment}.
  * The frontend must use a fetch-to-blob approach (not a plain anchor tag) to attach the
  * professor's {@code Authorization: Bearer} header to the download request.</p>
+ *
+ * <p>{@code GET /api/reports/courses/{id}} returns the same course report as JSON for
+ * the in-browser attendance view.</p>
  */
 @RestController
 @RequestMapping("/api/reports")
@@ -28,6 +32,20 @@ import java.util.UUID;
 public class ReportController {
 
     private final ReportService reportService;
+
+    // ── GET /api/reports/courses/{id} ────────────────────────
+
+    /**
+     * Returns the course-wide attendance matrix (every enrolled student against every
+     * session) as JSON. The course Excel report is rendered from the same data.
+     *
+     * @return 200 OK with a {@link CourseAttendanceReport};
+     *         403 if the professor does not own the course; 404 if it does not exist
+     */
+    @GetMapping("/courses/{id}")
+    public ResponseEntity<CourseAttendanceReport> getCourseReport(@PathVariable UUID id) {
+        return ResponseEntity.ok(reportService.buildCourseReport(id, getProfessorId()));
+    }
 
     // ── GET /api/reports/sessions/{id}/excel ─────────────────
 
