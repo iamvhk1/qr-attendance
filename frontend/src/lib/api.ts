@@ -9,6 +9,9 @@
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'; // proxied to :8080 by vite.config.ts in dev; set to Oracle VM URL in prod
 
+/** API base URL, shared with helpers that need raw fetch (e.g. file downloads). */
+export const API_BASE = BASE;
+
 const TOKEN_KEY = 'professor_token';
 
 // ── Token helpers ────────────────────────────────────────────────

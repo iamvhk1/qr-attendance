@@ -14,6 +14,7 @@ const RegisterPage  = lazy(() => import('./pages/professor/RegisterPage'));
 // Professor — dashboard pages (protected)
 const CoursesPage      = lazy(() => import('./pages/professor/CoursesPage'));
 const CourseDetailPage = lazy(() => import('./pages/professor/CourseDetailPage'));
+const CourseAttendancePage = lazy(() => import('./pages/professor/CourseAttendancePage'));
 const SessionPage      = lazy(() => import('./pages/professor/SessionPage'));
 
 // Layout
@@ -79,6 +80,7 @@ const App: React.FC = () => (
               <Route element={<DashboardLayout />}>
                 <Route path="/courses"           element={<CoursesPage />} />
                 <Route path="/courses/:courseId" element={<CourseDetailPage />} />
+                <Route path="/courses/:courseId/attendance" element={<CourseAttendancePage />} />
                 <Route path="/sessions/:sessionId" element={<SessionPage />} />
               </Route>
             </Route>

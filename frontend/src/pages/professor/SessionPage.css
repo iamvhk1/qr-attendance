@@ -204,6 +204,10 @@
 .attendance-stat-confirmed { color: var(--accent-400); }
 .attendance-stat-pending   { color: var(--warning-400); }
 .attendance-stat-invalid   { color: var(--danger-400); }
+.attendance-stat-absent    { color: var(--text-muted); }
+
+/* Enrolled students with no attendance record */
+.attendance-row-absent td { color: var(--text-muted); }
 
 /* Table */
 .attendance-table-wrap {

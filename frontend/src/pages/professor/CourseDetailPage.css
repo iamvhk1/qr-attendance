@@ -46,6 +46,12 @@
   margin-bottom: var(--space-3);
 }
 
+.detail-hero-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .detail-semester {
   font-size: 0.8125rem;
   color: var(--text-muted);

@@ -1,12 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square, Plus, PenLine, X, UserPlus } from 'lucide-react';
+import { ArrowLeft, Users, CheckCircle, Clock, XCircle, Wifi, WifiOff, Square, Plus, PenLine, X, UserPlus, UserX } from 'lucide-react';
 import { Card, CardHeader, CardBody, Button, Badge, Loader } from '../../components/ui';
 import { apiFetch, ApiError } from '../../lib/api';
+import { downloadFile } from '../../lib/download';
 import { useToast } from '../../hooks/useToast';
 import { ToastViewport } from '../../components/ui/Toast';
 import type { SessionResponse, AttendanceResponse, QrDataResponse } from '../../types/session';
+import type { StudentResponse } from '../../types/student';
 import './SessionPage.css';
 
 // ── Countdown Ring ────────────────────────────────────────────────
@@ -132,12 +134,14 @@ const OverrideModal: React.FC<OverrideModalProps> = ({ record, onClose, onSaved 
 
 interface ManualAttendanceModalProps {
   sessionId: string;
+  /** Pre-fills the roll number (used by "Mark present" on an absent row). */
+  initialRollNumber?: string;
   onClose: () => void;
   onSaved: (created: AttendanceResponse) => void;
 }
 
-const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({ sessionId, onClose, onSaved }) => {
-  const [rollNumber, setRollNumber] = useState('');
+const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({ sessionId, initialRollNumber, onClose, onSaved }) => {
+  const [rollNumber, setRollNumber] = useState(initialRollNumber ?? '');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -213,11 +217,15 @@ const STATUS_CONFIG = {
 
 interface AttendanceTableProps {
   records: AttendanceResponse[];
+  /** Enrolled students with no attendance record in this session. */
+  absent: StudentResponse[];
+  isLive: boolean;
   onOverride: (record: AttendanceResponse) => void;
+  onMarkPresent: (rollNumber: string) => void;
 }
 
-const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, onOverride }) => {
-  if (records.length === 0) {
+const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, absent, isLive, onOverride, onMarkPresent }) => {
+  if (records.length === 0 && absent.length === 0) {
     return (
       <div className="attendance-empty">
         <Users size={32} strokeWidth={1.25} aria-hidden="true" />
@@ -229,6 +237,8 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, onOverride }
   const confirmed   = records.filter((r) => r.status === 'CONFIRMED').length;
   const pending     = records.filter((r) => r.status === 'PENDING').length;
   const invalidated = records.filter((r) => r.status === 'INVALIDATED').length;
+  // While the session is live, students who haven't scanned may still arrive.
+  const absentLabel = isLive ? 'Not scanned' : 'Absent';
 
   return (
     <div>
@@ -242,6 +252,11 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, onOverride }
         <div className="attendance-stat attendance-stat-invalid">
           <XCircle size={16} aria-hidden="true" />{invalidated} Invalidated
         </div>
+        {absent.length > 0 && (
+          <div className="attendance-stat attendance-stat-absent">
+            <UserX size={16} aria-hidden="true" />{absent.length} {absentLabel}
+          </div>
+        )}
       </div>
 
       <div className="attendance-table-wrap">
@@ -288,6 +303,25 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, onOverride }
                 </tr>
               );
             })}
+            {absent.map((s) => (
+              <tr key={`absent-${s.id}`} className="attendance-row-absent">
+                <td><code className="roll-no">{s.rollNumber}</code></td>
+                <td>{s.fullName}</td>
+                <td><Badge variant="muted">{absentLabel}</Badge></td>
+                <td className="time-cell"><span className="no-coverage">—</span></td>
+                <td><span className="no-coverage">—</span></td>
+                <td>
+                  <button
+                    className="override-btn"
+                    title="Mark present"
+                    aria-label={`Mark ${s.fullName} present`}
+                    onClick={() => onMarkPresent(s.rollNumber)}
+                  >
+                    <UserPlus size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -324,7 +358,22 @@ const SessionPage: React.FC = () => {
   const [secondsLeft, setSecondsLeft]   = useState(0);
   const [overrideTarget, setOverrideTarget] = useState<AttendanceResponse | null>(null);
   const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualPrefill, setManualPrefill]     = useState<string | undefined>(undefined);
   const [congestionMode, setCongestionMode] = useState(false);
+  const [roster, setRoster]                 = useState<StudentResponse[]>([]);
+
+  // Enrolled students with no attendance record in this session.
+  const absentStudents = useMemo(() => {
+    const scanned = new Set(attendance.map((r) => r.rollNumber));
+    return roster
+      .filter((s) => !scanned.has(s.rollNumber))
+      .sort((a, b) => a.rollNumber.localeCompare(b.rollNumber));
+  }, [roster, attendance]);
+
+  const openManualModal = (rollNumber?: string) => {
+    setManualPrefill(rollNumber);
+    setManualModalOpen(true);
+  };
 
   const qrIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -395,6 +444,16 @@ const SessionPage: React.FC = () => {
       setDoubts(dbts);
     } catch { /* ignore transient errors */ }
   }, [sessionId]);
+
+  // ── Course roster (loaded once, to list students who didn't scan) ──
+
+  const courseId = session?.courseId;
+  useEffect(() => {
+    if (!courseId) return;
+    apiFetch<StudentResponse[]>(`/courses/${courseId}/students`)
+      .then(setRoster)
+      .catch(() => { /* roster is optional — the table still works without it */ });
+  }, [courseId]);
 
   // ── Polling lifecycle ──
 
@@ -663,23 +722,9 @@ const SessionPage: React.FC = () => {
                     variant="primary"
                     onClick={async () => {
                       try {
-                        const token = localStorage.getItem('professor_token');
-                        const url = import.meta.env.VITE_API_BASE_URL ?? '/api';
-                        const res = await fetch(`${url}/reports/sessions/${session.id}/excel`, {
-                          headers: { Authorization: `Bearer ${token}` }
-                        });
-                        if (!res.ok) throw new Error('Download failed');
-                        const blob = await res.blob();
-                        const downloadUrl = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = downloadUrl;
-                        a.download = `attendance-${session.id}.xlsx`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        window.URL.revokeObjectURL(downloadUrl);
+                        await downloadFile(`/reports/sessions/${session.id}/excel`, `attendance-${session.id}.xlsx`);
                       } catch (err) {
-                        console.error(err);
+                        toastError('Download failed', err instanceof Error ? err.message : undefined);
                       }
                     }}
                     style={{ marginTop: '1rem' }}
@@ -695,14 +740,16 @@ const SessionPage: React.FC = () => {
         {/* Attendance Panel */}
         <Card className="attendance-panel">
           <CardHeader
-            title={`Attendance (${attendance.length})`}
+            title={roster.length > 0
+              ? `Attendance (${attendance.length} of ${roster.length})`
+              : `Attendance (${attendance.length})`}
             subtitle={isLive ? 'Auto-refreshing every 5 seconds' : 'Final records'}
             action={
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <Button
                   variant="ghost"
                   leftIcon={<UserPlus size={14} />}
-                  onClick={() => setManualModalOpen(true)}
+                  onClick={() => openManualModal()}
                   id="manual-attendance-btn"
                   style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem' }}
                 >
@@ -713,7 +760,13 @@ const SessionPage: React.FC = () => {
             }
           />
           <CardBody>
-            <AttendanceTable records={attendance} onOverride={setOverrideTarget} />
+            <AttendanceTable
+              records={attendance}
+              absent={absentStudents}
+              isLive={isLive}
+              onOverride={setOverrideTarget}
+              onMarkPresent={openManualModal}
+            />
           </CardBody>
         </Card>
       </div>
@@ -747,6 +800,7 @@ const SessionPage: React.FC = () => {
       {manualModalOpen && sessionId && (
         <ManualAttendanceModal
           sessionId={sessionId}
+          initialRollNumber={manualPrefill}
           onClose={() => setManualModalOpen(false)}
           onSaved={(created) => {
             setAttendance((prev) => {

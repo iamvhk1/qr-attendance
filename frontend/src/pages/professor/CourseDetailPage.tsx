@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Users, Plus, Trash2, Play, X, FileSpreadsheet,
+  ArrowLeft, Users, Plus, Trash2, Play, X, FileSpreadsheet, Table2,
 } from 'lucide-react';
 import { Card, CardHeader, CardBody, Button, Input, Badge, Loader } from '../../components/ui';
 import { apiFetch, apiUpload, ApiError } from '../../lib/api';
+import { downloadFile } from '../../lib/download';
 import { useToast } from '../../hooks/useToast';
 import { ToastViewport } from '../../components/ui/Toast';
 import type { CourseResponse } from '../../types/course';
@@ -242,23 +243,7 @@ const CourseDetailPage: React.FC = () => {
   const handleDownloadCourseReport = async () => {
     setDownloadingReport(true);
     try {
-      const token = localStorage.getItem('professor_token');
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/reports/courses/${courseId}/excel`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to download report');
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `course-report-${courseId}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
+      await downloadFile(`/reports/courses/${courseId}/excel`, `course-report-${course?.code ?? courseId}.xlsx`);
       success('Report downloaded');
     } catch (err) {
       toastError('Download failed', err instanceof Error ? err.message : 'Could not download report');
@@ -309,15 +294,26 @@ const CourseDetailPage: React.FC = () => {
             <h1 className="detail-course-name">{course.name}</h1>
             <p className="detail-student-count"><Users size={15} aria-hidden="true" /> {course.studentCount} students enrolled</p>
           </div>
-          <Button
-            id="start-session-btn"
-            variant="success"
-            size="lg"
-            leftIcon={<Play size={18} />}
-            onClick={() => setShowSession(true)}
-          >
-            Start Session
-          </Button>
+          <div className="detail-hero-actions">
+            <Button
+              id="view-attendance-btn"
+              variant="secondary"
+              size="lg"
+              leftIcon={<Table2 size={18} />}
+              onClick={() => navigate(`/courses/${courseId}/attendance`)}
+            >
+              View Attendance
+            </Button>
+            <Button
+              id="start-session-btn"
+              variant="success"
+              size="lg"
+              leftIcon={<Play size={18} />}
+              onClick={() => setShowSession(true)}
+            >
+              Start Session
+            </Button>
+          </div>
         </div>
       </Card>
 

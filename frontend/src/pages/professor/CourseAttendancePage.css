@@ -1,0 +1,370 @@
+/* ── Course Attendance Page ──────────────────────────────────── */
+
+.att-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* Breadcrumb */
+.att-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+}
+.att-crumb-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color var(--duration-fast);
+}
+.att-crumb-link:hover { color: var(--primary-400); }
+.att-crumb-sep { color: var(--border-strong); }
+.att-crumb-current { color: var(--text-primary); font-weight: 500; }
+
+/* Header */
+.att-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.att-header-top { margin-bottom: var(--space-2); }
+.att-title {
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  margin: 0;
+}
+.att-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  margin-top: var(--space-1);
+}
+.att-header-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ── Summary stats ─────────────────────────────────────────────── */
+
+.att-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+.att-stat { border-radius: var(--radius-lg); }
+.att-stat-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.att-stat-icon {
+  display: flex;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--primary-900);
+  color: var(--primary-400);
+}
+.att-stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.att-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+.att-stat-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.att-stat-danger .att-stat-icon {
+  background: var(--danger-900);
+  color: var(--danger-400);
+}
+.att-stat-danger .att-stat-value { color: var(--danger-400); }
+
+/* ── Matrix card ───────────────────────────────────────────────── */
+
+.att-matrix-card { border-radius: var(--radius-xl); }
+
+.att-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.att-search {
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  max-width: 360px;
+}
+.att-search:focus-within { border-color: var(--primary-400); }
+.att-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.att-sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.att-sort select {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.att-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.att-toggle input { accent-color: var(--primary-500); }
+
+/* Legend */
+.att-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.att-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.att-legend-live {
+  padding-left: var(--space-2);
+  border-left: 3px solid var(--border-strong);
+}
+
+.att-notice {
+  margin: 0 var(--space-5) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+/* ── Table ─────────────────────────────────────────────────────── */
+
+.att-table-wrap {
+  overflow: auto;
+  max-height: 70vh;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.att-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+  min-width: 100%;
+}
+
+.att-table th,
+.att-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  text-align: left;
+  background: var(--bg-surface);
+}
+
+.att-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  vertical-align: bottom;
+}
+
+.att-table tbody th { font-weight: 400; }
+
+/* Sticky identity columns */
+.att-sticky {
+  position: sticky;
+  z-index: 1;
+}
+.att-col-roll { left: 0; width: 7.5rem; min-width: 7.5rem; }
+.att-col-name {
+  left: 7.5rem;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-right: 1px solid var(--border-default);
+}
+.att-table thead .att-sticky { z-index: 3; }
+
+.att-col-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.att-roll {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--primary-400);
+}
+
+.att-pct { font-weight: 600; color: var(--text-primary); }
+.att-pct-low { color: var(--danger-400); }
+
+/* Row hover — paint every cell, including sticky ones */
+.att-table tbody tr:hover > * { background: var(--bg-elevated); }
+
+/* Session columns */
+.att-session-col { text-align: center !important; min-width: 3.5rem; }
+.att-session-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.att-session-link:hover .att-session-day { color: var(--primary-400); }
+.att-session-day { font-weight: 600; color: var(--text-secondary); }
+.att-session-time { font-weight: 400; font-size: 0.6875rem; }
+
+.att-cell { text-align: center !important; }
+
+/* Live (not counted) columns */
+.att-table .att-col-live { background: var(--bg-elevated); }
+.att-col-live .att-session-time { color: var(--accent-400); font-weight: 600; }
+
+/* Cell marks */
+.att-cell-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+.cell-present { background: var(--accent-900);  color: var(--accent-400); }
+.cell-invalid { background: var(--danger-900);  color: var(--danger-400); }
+.cell-pending { background: var(--warning-900); color: var(--warning-400); }
+.cell-absent  { color: var(--text-muted); }
+
+/* Footer counts */
+.att-table tfoot th,
+.att-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-default);
+  border-bottom: none;
+}
+.att-table tfoot .att-sticky { z-index: 3; }
+.att-foot-count { font-variant-numeric: tabular-nums; }
+
+.att-no-match {
+  text-align: center !important;
+  color: var(--text-muted);
+  padding: var(--space-8) !important;
+  white-space: normal !important;
+}
+
+.att-count {
+  padding: var(--space-3) var(--space-5);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── States ────────────────────────────────────────────────────── */
+
+.att-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-16);
+}
+
+.att-state,
+.att-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+}
+.att-state-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ── Narrow screens ────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .att-toolbar,
+  .att-legend { padding-left: var(--space-4); padding-right: var(--space-4); }
+
+  .att-search { max-width: none; }
+
+  /* Only the roll number stays pinned; the name scrolls with the matrix */
+  .att-col-name {
+    position: static;
+    max-width: 9rem;
+  }
+  .att-col-roll { width: 6.5rem; min-width: 6.5rem; }
+
+  .att-stat-value { font-size: 1.25rem; }
+}
