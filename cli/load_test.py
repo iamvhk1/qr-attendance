@@ -5,8 +5,9 @@ import random
 import string
 import json
 
+from prof_auth import ensure_professor
+
 BASE_URL = "http://localhost:8080/api"
-ADMIN_SECRET = "changeme-admin-secret-2026"  # Used for local testing
 NUM_STUDENTS = 80
 
 def random_string(length=8):
@@ -15,30 +16,16 @@ def random_string(length=8):
 def run_load_test():
     print(f"Starting Load Test: Simulating {NUM_STUDENTS} students concurrently")
     
-    # 1. Create a Professor
+    # 1. Log in as a professor (registers with email verification on first run).
+    #    Reuses one account across runs: set QR_PROF_EMAIL / QR_PROF_PASSWORD, or use the defaults.
     session = requests.Session()
-    print("[1] Generating admin invite code...")
-    res = session.post(f"{BASE_URL}/admin/invite", json={"adminSecret": ADMIN_SECRET})
-    if res.status_code != 200:
-        print("Failed to get invite code. Ensure backend is running locally.")
+    print("[1-3] Logging in as professor...")
+    try:
+        prof_token, prof_email, _ = ensure_professor(BASE_URL, "Load Test Prof")
+    except requests.RequestException as e:
+        print(f"Could not reach the backend. Ensure it is running locally. ({e})")
         return
-    invite_code = res.json()["inviteCode"]
-
-    prof_email = f"prof_{random_string()}@test.com"
-    prof_pass = "Password123!"
-    print(f"[2] Registering Professor: {prof_email}...")
-    res = session.post(f"{BASE_URL}/auth/register", json={
-        "fullName": "Load Test Prof",
-        "email": prof_email,
-        "password": prof_pass,
-        "inviteCode": invite_code
-    })
-    res.raise_for_status()
-
-    print("[3] Logging in...")
-    res = session.post(f"{BASE_URL}/auth/login", json={"email": prof_email, "password": prof_pass})
-    res.raise_for_status()
-    prof_token = res.json()["token"]
+    print(f"      Logged in as {prof_email}")
     prof_headers = {"Authorization": f"Bearer {prof_token}"}
 
     # 2. Create a Course

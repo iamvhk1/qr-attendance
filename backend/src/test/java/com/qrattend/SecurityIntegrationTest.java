@@ -34,13 +34,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Covers every security attack vector:</p>
  * <ul>
  *   <li>Missing / malformed / tampered JWT</li>
- *   <li>Token type misuse (SCAN as LOGIN, LOGIN as SCAN, INVITE as either)</li>
+ *   <li>Token type misuse (SCAN as LOGIN, LOGIN as SCAN, retired INVITE tokens)</li>
  *   <li>Algorithm confusion (alg:none)</li>
  *   <li>Cross-professor resource isolation</li>
  *   <li>Horizontal privilege escalation (accessing another professor's sessions/courses)</li>
- *   <li>Admin secret protection</li>
+ *   <li>Registration requires a verified iitm.ac.in email (OTP)</li>
  *   <li>ROLE boundary enforcement (PROFESSOR vs SCAN endpoints)</li>
- *   <li>Timing-safe admin secret comparison</li>
  *   <li>Password not leaked in any response</li>
  *   <li>Scan token short-expiry enforcement</li>
  * </ul>
@@ -61,6 +60,8 @@ class SecurityIntegrationTest {
     @Autowired private AttendanceRepository attendanceRepository;
     @Autowired private StudentRepository studentRepository;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private com.qrattend.support.RecordingEmailSender emailSender;
+    @org.springframework.beans.factory.annotation.Value("${app.jwt.secret}") private String jwtSecret;
 
     // ── Helpers ─────────────────────────────────────────────────────
 
@@ -270,7 +271,7 @@ class SecurityIntegrationTest {
             // Generate a token that expired 1 second ago
             JwtUtil expiredUtil = new JwtUtil(
                     "c3VwZXItc2VjcmV0LWtleS1mb3ItcXItYXR0ZW5kYW5jZS1zeXN0ZW0tMjAyNi1jaGFuZ2UtaW4tcHJvZA==",
-                    -1000L, 15000L, 20000L, 172800000L, 7200000L);
+                    -1000L, 15000L, 20000L, 7200000L);
             String expiredJwt = expiredUtil.generateLoginToken(UUID.randomUUID(), "expired@test.com");
 
             mockMvc.perform(get("/api/courses")
@@ -288,9 +289,18 @@ class SecurityIntegrationTest {
     class TokenTypeMisuse {
 
         @Test
-        @DisplayName("INVITE token used on professor endpoint → 401 (wrong type)")
+        @DisplayName("Retired INVITE-type token (validly signed) on professor endpoint → 401")
         void inviteTokenOnProfessorEndpoint_returns401() throws Exception {
-            String inviteJwt = jwtUtil.generateInviteToken();
+            // Invite codes were replaced by email OTP; a correctly signed token of the old
+            // INVITE type must not authenticate anything.
+            String inviteJwt = io.jsonwebtoken.Jwts.builder()
+                    .subject("admin-invite")
+                    .claim("type", "INVITE")
+                    .issuedAt(new java.util.Date())
+                    .expiration(new java.util.Date(System.currentTimeMillis() + 3_600_000))
+                    .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                            jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                    .compact();
             mockMvc.perform(get("/api/courses")
                             .header("Authorization", "Bearer " + inviteJwt))
                     .andExpect(status().isUnauthorized());
@@ -350,17 +360,6 @@ class SecurityIntegrationTest {
                     .andExpect(status().isForbidden());
         }
 
-        @Test
-        @DisplayName("INVITE token on admin endpoint still rejects (invite is not admin secret)")
-        void inviteTokenOnAdminEndpoint_behavesCorrectly() throws Exception {
-            // /api/admin/invite doesn't use JWT — it uses adminSecret in body
-            // Using an invite token as the adminSecret should be rejected (wrong secret value)
-            String inviteJwt = jwtUtil.generateInviteToken();
-            mockMvc.perform(post("/api/admin/invite")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\": \"" + inviteJwt + "\"}"))
-                    .andExpect(status().isUnauthorized());
-        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -485,48 +484,149 @@ class SecurityIntegrationTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  GROUP 5: Admin Secret Protection
+    //  GROUP 5: Registration requires a verified iitm.ac.in email
     // ═══════════════════════════════════════════════════════════════
 
     @Nested
-    @DisplayName("Group 5 — Admin Secret Protection")
-    class AdminSecretProtection {
+    @DisplayName("Group 5 — Registration requires a verified email")
+    class EmailVerifiedRegistration {
 
-        @Test
-        @DisplayName("Wrong admin secret → 401")
-        void wrongSecret_returns401() throws Exception {
-            mockMvc.perform(post("/api/admin/invite")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"hacker\"}"))
-                    .andExpect(status().isUnauthorized());
+        private org.springframework.test.web.servlet.ResultActions requestOtp(String email) throws Exception {
+            return mockMvc.perform(post("/api/auth/otp")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"email\":\"" + email + "\"}"));
+        }
+
+        private org.springframework.test.web.servlet.ResultActions register(String email, String otp) throws Exception {
+            return mockMvc.perform(post("/api/auth/register")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"email\":\"" + email + "\",\"otp\":\"" + otp + "\"," +
+                            "\"password\":\"Pass1234!\",\"fullName\":\"Verified Prof\"}"));
         }
 
         @Test
-        @DisplayName("Empty admin secret → 400 (validation)")
-        void emptySecret_returns400() throws Exception {
-            mockMvc.perform(post("/api/admin/invite")
+        @DisplayName("Full flow: request code → register with it → log in")
+        void fullFlow() throws Exception {
+            String email = "flow.prof@cse.iitm.ac.in";
+            requestOtp(email).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.expiresInSeconds").value(600));
+            String code = emailSender.lastCodeFor(email);
+
+            register(email, code).andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.email").value(email));
+
+            mockMvc.perform(post("/api/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"\"}"))
+                            .content("{\"email\":\"" + email + "\",\"password\":\"Pass1234!\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.token").isNotEmpty());
+        }
+
+        @Test
+        @DisplayName("Mixed-case email: code works, account stored lower-case, login works in any case")
+        void mixedCaseEmail() throws Exception {
+            requestOtp("Mixed.Case@IITM.ac.in").andExpect(status().isOk());
+            String code = emailSender.lastCodeFor("mixed.case@iitm.ac.in");
+
+            register("MIXED.case@iitm.AC.in", code).andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.email").value("mixed.case@iitm.ac.in"));
+
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"Mixed.Case@IITM.ac.in\",\"password\":\"Pass1234!\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Register without ever requesting a code → 400, no account")
+        void registerWithoutCode() throws Exception {
+            register("nocode@iitm.ac.in", "123456").andExpect(status().isBadRequest());
+            assertThat(professorRepository.existsByEmailIgnoreCase("nocode@iitm.ac.in")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Wrong code → 400 with attempts left, no account")
+        void wrongCode() throws Exception {
+            String email = "wrongcode@iitm.ac.in";
+            requestOtp(email).andExpect(status().isOk());
+            String wrong = emailSender.lastCodeFor(email).equals("000000") ? "111111" : "000000";
+
+            register(email, wrong).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Incorrect code. 4 attempts left."));
+            assertThat(professorRepository.existsByEmailIgnoreCase(email)).isFalse();
+        }
+
+        @Test
+        @DisplayName("A code sent to one address can not register a different address")
+        void codeBoundToEmail() throws Exception {
+            requestOtp("owner@iitm.ac.in").andExpect(status().isOk());
+            String code = emailSender.lastCodeFor("owner@iitm.ac.in");
+
+            register("attacker@iitm.ac.in", code).andExpect(status().isBadRequest());
+            assertThat(professorRepository.existsByEmailIgnoreCase("attacker@iitm.ac.in")).isFalse();
+        }
+
+        @Test
+        @DisplayName("A code can only be used once")
+        void codeSingleUse() throws Exception {
+            String email = "once@iitm.ac.in";
+            requestOtp(email).andExpect(status().isOk());
+            String code = emailSender.lastCodeFor(email);
+            register(email, code).andExpect(status().isCreated());
+
+            // Same email again → already registered (409) before the code is even checked
+            register(email, code).andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("Student smail address is refused at both steps")
+        void studentAddressRefused() throws Exception {
+            requestOtp("cs24b001@smail.iitm.ac.in").andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Student")));
+            register("cs24b001@smail.iitm.ac.in", "123456").andExpect(status().isBadRequest());
+            assertThat(emailSender.hasEmailFor("cs24b001@smail.iitm.ac.in")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Non-IITM address is refused and no email is sent")
+        void otherDomainRefused() throws Exception {
+            requestOtp("someone@gmail.com").andExpect(status().isBadRequest());
+            requestOtp("someone@iitm.ac.in.evil.com").andExpect(status().isBadRequest());
+            assertThat(emailSender.hasEmailFor("someone@gmail.com")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Requesting a code for an already-registered email → 409, no email")
+        void alreadyRegisteredGetsNoCode() throws Exception {
+            createProfessorAndLogin("existing@iitm.ac.in", "Pass1234!");
+            requestOtp("existing@iitm.ac.in").andExpect(status().isConflict());
+            assertThat(emailSender.hasEmailFor("existing@iitm.ac.in")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Requesting again within the cooldown → 429 with Retry-After")
+        void resendCooldown() throws Exception {
+            requestOtp("cooldown@iitm.ac.in").andExpect(status().isOk());
+            requestOtp("cooldown@iitm.ac.in").andExpect(status().isTooManyRequests())
+                    .andExpect(header().exists("Retry-After"));
+        }
+
+        @Test
+        @DisplayName("Old invite-code style registration (no otp field) → 400")
+        void oldInviteStyleRejected() throws Exception {
+            mockMvc.perform(post("/api/auth/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"inviteCode\":\"eyJhbGciOi.fake.code\",\"email\":\"old@iitm.ac.in\"," +
+                                    "\"password\":\"Pass1234!\",\"fullName\":\"Old Flow\"}"))
                     .andExpect(status().isBadRequest());
         }
 
         @Test
-        @DisplayName("Admin secret that is almost correct (1 char off) → 401 — constant-time compare")
-        void almostCorrectSecret_returns401() throws Exception {
-            // Tests that the constant-time MessageDigest.isEqual is functioning
+        @DisplayName("The removed admin invite endpoint is no longer public → 401")
+        void adminInviteEndpointGone() throws Exception {
             mockMvc.perform(post("/api/admin/invite")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"changeme-admin-secret-202X\"}"))
-                    .andExpect(status().isUnauthorized());
-        }
-
-        @Test
-        @DisplayName("Valid JWT as admin secret → 401 (JWT is not the admin secret)")
-        void jwtAsAdminSecret_returns401() throws Exception {
-            String jwt = createProfessorAndLogin("jwtadmin@test.com", "Pass1234!");
-            mockMvc.perform(post("/api/admin/invite")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"" + jwt + "\"}"))
+                            .content("{\"adminSecret\":\"changeme-admin-secret-2026\"}"))
                     .andExpect(status().isUnauthorized());
         }
     }
@@ -613,18 +713,16 @@ class SecurityIntegrationTest {
         @Test
         @DisplayName("Register response does NOT contain passwordHash")
         void registerResponse_noPasswordHash() throws Exception {
-            // Get a real invite for this test
-            MvcResult inviteResult = mockMvc.perform(post("/api/admin/invite")
+            mockMvc.perform(post("/api/auth/otp")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"changeme-admin-secret-2026\"}"))
-                    .andReturn();
-            String invite = objectMapper.readTree(
-                    inviteResult.getResponse().getContentAsString()).get("inviteCode").asText();
+                            .content("{\"email\":\"noleak2@iitm.ac.in\"}"))
+                    .andExpect(status().isOk());
+            String code = emailSender.lastCodeFor("noleak2@iitm.ac.in");
 
             MvcResult result = mockMvc.perform(post("/api/auth/register")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"inviteCode\":\"" + invite + "\"," +
-                                    "\"email\":\"noleak2@test.com\"," +
+                            .content("{\"otp\":\"" + code + "\"," +
+                                    "\"email\":\"noleak2@iitm.ac.in\"," +
                                     "\"password\":\"Pass1234!\"," +
                                     "\"fullName\":\"Test Prof\"}"))
                     .andExpect(status().isCreated())
@@ -669,17 +767,18 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        @DisplayName("Admin secret is NOT echoed back in any response")
-        void adminSecret_notInResponse() throws Exception {
-            MvcResult result = mockMvc.perform(post("/api/admin/invite")
+        @DisplayName("The verification code is NOT returned by the API — only emailed")
+        void otpNotInResponse() throws Exception {
+            MvcResult result = mockMvc.perform(post("/api/auth/otp")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"changeme-admin-secret-2026\"}"))
+                            .content("{\"email\":\"noleak4@iitm.ac.in\"}"))
                     .andExpect(status().isOk())
                     .andReturn();
 
+            String code = emailSender.lastCodeFor("noleak4@iitm.ac.in");
             String body = result.getResponse().getContentAsString();
-            assertThat(body).doesNotContain("changeme-admin-secret-2026");
-            assertThat(body).doesNotContain("adminSecret");
+            assertThat(body).doesNotContain(code);
+            assertThat(body).doesNotContain("codeHash");
         }
     }
 

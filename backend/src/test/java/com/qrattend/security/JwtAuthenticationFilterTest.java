@@ -34,7 +34,6 @@ class JwtAuthenticationFilterTest {
             "dGVzdC1zZWNyZXQta2V5LWZvci1qd3QtdW5pdC10ZXN0cy0yMDI2LW11c3QtYmUtMjU2LWJpdHM=";
     private static final long LOGIN_EXPIRATION_MS = 86_400_000L;
     private static final long SCAN_EXPIRATION_MS = 15_000L;
-    private static final long INVITE_EXPIRATION_MS = 172_800_000L;
 
     private JwtUtil jwtUtil;
     private JwtAuthenticationFilter filter;
@@ -45,7 +44,7 @@ class JwtAuthenticationFilterTest {
 
     @BeforeEach
     void setUp() {
-        jwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, INVITE_EXPIRATION_MS, 7200000L);
+        jwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 7200000L);
         filter = new JwtAuthenticationFilter(jwtUtil);
         filterChain = mock(FilterChain.class);
         request = new MockHttpServletRequest();
@@ -97,7 +96,7 @@ class JwtAuthenticationFilterTest {
     @DisplayName("Expired token → filter chain continues, no authentication set")
     void expiredToken_noAuthentication() throws ServletException, IOException {
         // Create a JwtUtil with 0ms login expiration → token is immediately expired
-        JwtUtil expiredJwtUtil = new JwtUtil(TEST_SECRET, 0L, SCAN_EXPIRATION_MS, 20000L, INVITE_EXPIRATION_MS, 7200000L);
+        JwtUtil expiredJwtUtil = new JwtUtil(TEST_SECRET, 0L, SCAN_EXPIRATION_MS, 20000L, 7200000L);
         String expiredToken = expiredJwtUtil.generateLoginToken(UUID.randomUUID(), "test@iitm.ac.in");
 
         request.addHeader("Authorization", "Bearer " + expiredToken);
@@ -181,19 +180,6 @@ class JwtAuthenticationFilterTest {
 
     // ── Unknown Token Type ──────────────────────────────────
 
-    @Test
-    @DisplayName("Valid INVITE token → no authentication set (filter only handles LOGIN and SCAN)")
-    void inviteToken_noAuthentication() throws ServletException, IOException {
-        String inviteToken = jwtUtil.generateInviteToken();
-
-        request.addHeader("Authorization", "Bearer " + inviteToken);
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-    }
-
     // ── Token from different secret ─────────────────────────
 
     @Test
@@ -204,7 +190,6 @@ class JwtAuthenticationFilterTest {
                 LOGIN_EXPIRATION_MS,
                 SCAN_EXPIRATION_MS,
                 20000L,
-                INVITE_EXPIRATION_MS,
                 7200000L
         );
         String foreignToken = otherJwtUtil.generateLoginToken(UUID.randomUUID(), "hacker@evil.com");

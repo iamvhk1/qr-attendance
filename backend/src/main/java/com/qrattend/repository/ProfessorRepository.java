@@ -13,4 +13,8 @@ public interface ProfessorRepository extends JpaRepository<Professor, UUID> {
     Optional<Professor> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    Optional<Professor> findByEmailIgnoreCase(String email);
+
+    boolean existsByEmailIgnoreCase(String email);
 }

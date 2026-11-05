@@ -61,11 +61,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TimingIntegrationTest {
 
     @Autowired private MockMvc       mockMvc;
+    @Autowired private com.qrattend.support.RecordingEmailSender emailSender;
     @Autowired private ObjectMapper  objectMapper;
     @Autowired private JwtUtil       jwtUtil;
 
     // Unique credentials — will not clash with SecurityIntegrationTest or PersistenceIntegrationTest
-    private static final String EMAIL    = "timing.prof@test.com";
+    private static final String EMAIL    = "timing.prof@iitm.ac.in";
     private static final String PASSWORD = "Timing1234!";
 
     // Shared state across the ordered test sequence
@@ -100,17 +101,16 @@ class TimingIntegrationTest {
                 .andReturn();
 
         if (loginAttempt.getResponse().getStatus() == 401) {
-            // Professor doesn't exist yet — register first
-            MvcResult inviteResult = mockMvc.perform(post("/api/admin/invite")
+            // Verify the email first: request a code and read it from the recorded email
+            mockMvc.perform(post("/api/auth/otp")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"changeme-admin-secret-2026\"}"))
-                    .andExpect(status().isOk()).andReturn();
-            String invite = objectMapper.readTree(
-                    inviteResult.getResponse().getContentAsString()).get("inviteCode").asText();
+                            .content("{\"email\":\"" + EMAIL + "\"}"))
+                    .andExpect(status().isOk());
+            String code = emailSender.lastCodeFor(EMAIL);
 
             mockMvc.perform(post("/api/auth/register")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"inviteCode\":\"" + invite + "\",\"email\":\"" + EMAIL
+                            .content("{\"otp\":\"" + code + "\",\"email\":\"" + EMAIL
                                     + "\",\"password\":\"" + PASSWORD
                                     + "\",\"fullName\":\"Dr. Timer\"}"))
                     .andExpect(status().isCreated());

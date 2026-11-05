@@ -7,7 +7,8 @@ import com.qrattend.dto.auth.RegisterResponse;
 import com.qrattend.entity.Professor;
 import com.qrattend.exception.DuplicateResourceException;
 import com.qrattend.exception.InvalidCredentialsException;
-import com.qrattend.exception.InvalidInviteCodeException;
+import com.qrattend.exception.EmailNotAllowedException;
+import com.qrattend.exception.InvalidOtpException;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Handles professor registration and login.
  *
- * <p><b>Register flow:</b> validate invite code → check email uniqueness →
- * bcrypt password → save professor.</p>
+ * <p><b>Register flow:</b> check the email domain → check email uniqueness →
+ * verify the emailed code ({@link EmailOtpService}) → bcrypt password → save professor.</p>
  *
  * <p><b>Login flow:</b> find by email → verify bcrypt password →
  * generate login JWT.</p>
@@ -33,34 +34,39 @@ public class AuthService {
     private final ProfessorRepository professorRepository;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
+    private final EmailOtpService emailOtpService;
 
     /**
      * Registers a new professor account.
      *
-     * @param request the registration payload (invite code, email, password, name)
+     * @param request the registration payload (email, emailed code, password, name)
      * @return the created professor's info
-     * @throws InvalidInviteCodeException if the invite code is invalid or expired
+     * @throws EmailNotAllowedException   if the email domain may not register
      * @throws DuplicateResourceException if the email is already registered
+     * @throws InvalidOtpException        if the emailed code is missing, wrong or expired
      */
-    @Transactional
+    @Transactional(noRollbackFor = InvalidOtpException.class)
     public RegisterResponse register(RegisterRequest request) {
-        // 1. Validate invite code (must be a valid, non-expired INVITE JWT)
-        if (!jwtUtil.isInviteToken(request.inviteCode())) {
-            throw new InvalidInviteCodeException("Invalid or expired invite code");
+        String email = EmailOtpService.normalise(request.email());
+
+        // 1. Only allowed email domains (checked again here, not just when the code is sent)
+        emailOtpService.assertAllowed(email);
+
+        // 2. Check email uniqueness (before using up the code)
+        if (professorRepository.existsByEmailIgnoreCase(email)) {
+            throw new DuplicateResourceException("An account with this email already exists. Log in instead.");
         }
 
-        // 2. Check email uniqueness
-        if (professorRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email is already registered: " + request.email());
-        }
+        // 3. Prove the registrant owns the email; the code is deleted on success
+        emailOtpService.verifyAndConsume(email, request.otp());
 
-        // 3. Hash the password
+        // 4. Hash the password
         String passwordHash = passwordEncoder.encode(request.password());
 
-        // 4. Build and save professor
+        // 5. Build and save professor
         Professor professor = Professor.builder()
-                .fullName(request.fullName())
-                .email(request.email())
+                .fullName(request.fullName().trim())
+                .email(email)
                 .passwordHash(passwordHash)
                 .build();
 
@@ -83,8 +89,11 @@ public class AuthService {
      * @throws InvalidCredentialsException if the email is not found or password is wrong
      */
     public LoginResponse login(LoginRequest request) {
-        // 1. Find professor by email
-        Professor professor = professorRepository.findByEmail(request.email())
+        // 1. Find professor by email (exact match first; case-insensitive for accounts
+        //    created before emails were normalised to lower case)
+        String email = request.email().trim();
+        Professor professor = professorRepository.findByEmail(email)
+                .or(() -> professorRepository.findByEmailIgnoreCase(email))
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
 
         // 2. Verify password

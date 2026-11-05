@@ -73,6 +73,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PersistenceIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private com.qrattend.support.RecordingEmailSender emailSender;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JwtUtil jwtUtil;
     @Autowired private ProfessorRepository professorRepository;
@@ -82,7 +83,7 @@ class PersistenceIntegrationTest {
     @Autowired private PasswordEncoder passwordEncoder;
 
     // Unique email — avoids collisions with SecurityIntegrationTest or Phase1IntegrationTest
-    private static final String EMAIL    = "persist.prof@test.com";
+    private static final String EMAIL    = "persist.prof@iitm.ac.in";
     private static final String PASSWORD = "Persist1234!";
 
     // Shared state across ordered tests — set in early tests, read in later ones
@@ -120,17 +121,16 @@ class PersistenceIntegrationTest {
                 .andReturn();
 
         if (loginResult.getResponse().getStatus() == 401) {
-            // Professor not registered yet — bootstrap: get invite and register
-            MvcResult inviteResult = mockMvc.perform(post("/api/admin/invite")
+            // Verify the email first: request a code and read it from the recorded email
+            mockMvc.perform(post("/api/auth/otp")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"adminSecret\":\"changeme-admin-secret-2026\"}"))
-                    .andExpect(status().isOk()).andReturn();
-            String invite = objectMapper.readTree(
-                    inviteResult.getResponse().getContentAsString()).get("inviteCode").asText();
+                            .content("{\"email\":\"" + EMAIL + "\"}"))
+                    .andExpect(status().isOk());
+            String code = emailSender.lastCodeFor(EMAIL);
 
             MvcResult regResult = mockMvc.perform(post("/api/auth/register")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"inviteCode\":\"" + invite + "\",\"email\":\"" + EMAIL +
+                            .content("{\"otp\":\"" + code + "\",\"email\":\"" + EMAIL +
                                     "\",\"password\":\"" + PASSWORD + "\",\"fullName\":\"Dr. Persist\"}"))
                     .andExpect(status().isCreated()).andReturn();
 
@@ -184,18 +184,17 @@ class PersistenceIntegrationTest {
     @Test @Order(1)
     @DisplayName("P1-a: Register professor via HTTP → committed to DB in new transaction")
     void prof_registeredAndPersisted() throws Exception {
-        // Get invite code
-        MvcResult inviteResult = mockMvc.perform(post("/api/admin/invite")
+        // Verify the email first: request a code and read it from the recorded email
+        mockMvc.perform(post("/api/auth/otp")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"adminSecret\":\"changeme-admin-secret-2026\"}"))
-                .andExpect(status().isOk()).andReturn();
-        String invite = objectMapper.readTree(
-                inviteResult.getResponse().getContentAsString()).get("inviteCode").asText();
+                        .content("{\"email\":\"" + EMAIL + "\"}"))
+                .andExpect(status().isOk());
+        String code = emailSender.lastCodeFor(EMAIL);
 
         // Register
         MvcResult regResult = mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"inviteCode\":\"" + invite + "\"," +
+                        .content("{\"otp\":\"" + code + "\"," +
                                 "\"email\":\"" + EMAIL + "\"," +
                                 "\"password\":\"" + PASSWORD + "\"," +
                                 "\"fullName\":\"Dr. Persist\"}"))

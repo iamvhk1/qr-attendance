@@ -45,7 +45,8 @@ class ProductionConfigTest {
 
     private static final String TEST_JWT_SECRET =
             "cHJvZC10ZXN0LXNlY3JldC1rZXktdGhhdC1pcy1sb25nLWVub3VnaC1mb3ItaHMyNTY=";
-    private static final String TEST_ADMIN_SECRET = "prod-test-admin-secret";
+    private static final String TEST_BREVO_KEY = "xkeysib-prod-test-key";
+    private static final String TEST_MAIL_FROM = "noreply@iitm.ac.in";
 
     /** Boots the app with the prod profile and the given extra arguments; caller must close it. */
     private static ConfigurableApplicationContext bootProd(String... extraArgs) {
@@ -69,29 +70,50 @@ class ProductionConfigTest {
         void failsWithoutJwtSecret() {
             assumeTrue(System.getenv("JWT_SECRET") == null, "JWT_SECRET is set in this environment");
 
-            assertThatThrownBy(() -> bootProd("--ADMIN_SECRET=" + TEST_ADMIN_SECRET).close())
+            assertThatThrownBy(() -> bootProd(
+                    "--BREVO_API_KEY=" + TEST_BREVO_KEY, "--MAIL_FROM=" + TEST_MAIL_FROM).close())
                     .hasStackTraceContaining("Could not resolve placeholder 'JWT_SECRET'");
         }
 
         @Test
-        @DisplayName("Refuses to start when ADMIN_SECRET is not set")
-        void failsWithoutAdminSecret() {
-            assumeTrue(System.getenv("ADMIN_SECRET") == null, "ADMIN_SECRET is set in this environment");
+        @DisplayName("Refuses to start when BREVO_API_KEY is not set")
+        void failsWithoutBrevoKey() {
+            assumeTrue(System.getenv("BREVO_API_KEY") == null, "BREVO_API_KEY is set in this environment");
 
-            assertThatThrownBy(() -> bootProd("--JWT_SECRET=" + TEST_JWT_SECRET).close())
-                    .hasStackTraceContaining("Could not resolve placeholder 'ADMIN_SECRET'");
+            assertThatThrownBy(() -> bootProd(
+                    "--JWT_SECRET=" + TEST_JWT_SECRET, "--MAIL_FROM=" + TEST_MAIL_FROM).close())
+                    .hasStackTraceContaining("Could not resolve placeholder 'BREVO_API_KEY'");
         }
 
         @Test
-        @DisplayName("Starts and uses the environment's secrets when both are set")
-        void startsWithBothSecrets() {
+        @DisplayName("Refuses to start when MAIL_FROM is not set")
+        void failsWithoutMailFrom() {
+            assumeTrue(System.getenv("MAIL_FROM") == null, "MAIL_FROM is set in this environment");
+
+            assertThatThrownBy(() -> bootProd(
+                    "--JWT_SECRET=" + TEST_JWT_SECRET, "--BREVO_API_KEY=" + TEST_BREVO_KEY).close())
+                    .hasStackTraceContaining("Could not resolve placeholder 'MAIL_FROM'");
+        }
+
+        @Test
+        @DisplayName("Starts with all three set: uses them, sends email via Brevo, no longer needs ADMIN_SECRET")
+        void startsWithAllSecrets() {
+            assumeTrue(System.getenv("ADMIN_SECRET") == null, "ADMIN_SECRET is set in this environment");
+
             try (ConfigurableApplicationContext ctx = bootProd(
                     "--JWT_SECRET=" + TEST_JWT_SECRET,
-                    "--ADMIN_SECRET=" + TEST_ADMIN_SECRET)) {
+                    "--BREVO_API_KEY=" + TEST_BREVO_KEY,
+                    "--MAIL_FROM=" + TEST_MAIL_FROM)) {
 
                 Environment env = ctx.getEnvironment();
                 assertThat(env.getProperty("app.jwt.secret")).isEqualTo(TEST_JWT_SECRET);
-                assertThat(env.getProperty("app.admin.secret")).isEqualTo(TEST_ADMIN_SECRET);
+                assertThat(env.getProperty("app.mail.provider")).isEqualTo("brevo");
+                assertThat(env.getProperty("app.mail.brevo.api-key")).isEqualTo(TEST_BREVO_KEY);
+                assertThat(env.getProperty("app.mail.from-address")).isEqualTo(TEST_MAIL_FROM);
+
+                // The real sender in production is Brevo; the console-logging sender is not created
+                assertThat(ctx.getBeansOfType(com.qrattend.mail.BrevoEmailSender.class)).hasSize(1);
+                assertThat(ctx.getBeansOfType(com.qrattend.mail.LoggingEmailSender.class)).isEmpty();
             }
         }
     }
@@ -111,7 +133,8 @@ class ProductionConfigTest {
             "spring.datasource.driver-class-name=org.h2.Driver",
             "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
             "JWT_SECRET=" + TEST_JWT_SECRET,
-            "ADMIN_SECRET=" + TEST_ADMIN_SECRET,
+            "BREVO_API_KEY=" + TEST_BREVO_KEY,
+            "MAIL_FROM=" + TEST_MAIL_FROM,
     })
     @DisplayName("Fix 2 — H2 console in production")
     class H2ConsoleInProd {

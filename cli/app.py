@@ -7,6 +7,7 @@ import requests
 import qrcode
 import threading
 from colorama import init, Fore, Style
+from prof_auth import credentials, ensure_professor
 
 init(autoreset=True)
 
@@ -45,8 +46,8 @@ class QRCLI(cmd.Cmd):
             print(Fore.YELLOW + f"Session token expired. Re-authenticating...")
             try:
                 refresh_res = requests.post(f"{API_BASE}/auth/login", json={
-                    "email": self.state.get("email", "prof.cli@college.edu"),
-                    "password": self.state.get("password", "SecurePass123!")
+                    "email": self.state.get("email", credentials()[0]),
+                    "password": self.state.get("password", credentials()[1])
                 })
                 refresh_res.raise_for_status()
                 self.state["token"] = refresh_res.json()["token"]
@@ -62,34 +63,14 @@ class QRCLI(cmd.Cmd):
     def auto_setup(self):
         print(Fore.YELLOW + "No saved session found. Running auto-setup...")
         
-        # 1. Get invite
+        # 1-3. Log in, registering first (with email verification) if the account doesn't exist.
+        #      Credentials: QR_PROF_EMAIL / QR_PROF_PASSWORD (see prof_auth.py).
         try:
-            res = requests.post(f"{API_BASE}/admin/invite", json={"adminSecret": "changeme-admin-secret-2026"})
-            res.raise_for_status()
-            invite_code = res.json()["inviteCode"]
-        except Exception as e:
-            print(Fore.RED + f"Failed to get invite (is the server running?): {e}")
+            token, user_email, user_pass = ensure_professor(API_BASE, "CLI Professor")
+        except requests.RequestException as e:
+            print(Fore.RED + f"Could not reach the server (is it running?): {e}")
             sys.exit(1)
-
-        # 2. Register
-        user_email = "prof.cli@college.edu"
-        user_pass = "SecurePass123!"
-        print(Fore.YELLOW + f"Registering default professor: {user_email}...")
-        requests.post(f"{API_BASE}/auth/register", json={
-            "inviteCode": invite_code,
-            "email": user_email,
-            "password": user_pass,
-            "fullName": "CLI Professor"
-        }) # Ignore if already exists
-
-        # 3. Login
-        print(Fore.YELLOW + "Logging in...")
-        res = requests.post(f"{API_BASE}/auth/login", json={
-            "email": user_email,
-            "password": user_pass
-        })
-        res.raise_for_status()
-        self.state["token"] = res.json()["token"]
+        self.state["token"] = token
         # Save credentials for future token refresh
         self.state["email"] = user_email
         self.state["password"] = user_pass

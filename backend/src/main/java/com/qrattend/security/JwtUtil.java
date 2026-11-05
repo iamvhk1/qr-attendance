@@ -35,13 +35,11 @@ public class JwtUtil {
 
     private static final String TYPE_LOGIN    = "LOGIN";
     private static final String TYPE_SCAN     = "SCAN";
-    private static final String TYPE_INVITE   = "INVITE";
     private static final String TYPE_ATTENDANCE = "ATTENDANCE";
 
     private final SecretKey signingKey;
     private final long loginExpirationMs;
     private final long scanExpirationMs;
-    private final long inviteExpirationMs;
     private final long attendanceExpirationMs;
     private final long scanCongestionExpirationMs;
 
@@ -50,7 +48,6 @@ public class JwtUtil {
             @Value("${app.jwt.login-expiration-ms}") long loginExpirationMs,
             @Value("${app.jwt.scan-expiration-ms}") long scanExpirationMs,
             @Value("${app.jwt.scan-congestion-expiration-ms:20000}") long scanCongestionExpirationMs,
-            @Value("${app.jwt.invite-expiration-ms}") long inviteExpirationMs,
             @Value("${app.jwt.attendance-expiration-ms:7200000}") long attendanceExpirationMs) {
 
         // HMAC-SHA256 requires a key of at least 256 bits (32 bytes).
@@ -59,7 +56,6 @@ public class JwtUtil {
         this.loginExpirationMs   = loginExpirationMs;
         this.scanExpirationMs    = scanExpirationMs;
         this.scanCongestionExpirationMs = scanCongestionExpirationMs;
-        this.inviteExpirationMs  = inviteExpirationMs;
         this.attendanceExpirationMs = attendanceExpirationMs;
     }
 
@@ -112,24 +108,6 @@ public class JwtUtil {
         return Jwts.builder()
                 .subject(sessionId.toString())
                 .claim(CLAIM_TYPE, TYPE_SCAN)
-                .issuedAt(now)
-                .expiration(expiry)
-                .signWith(signingKey)
-                .compact();
-    }
-
-    /**
-     * Creates a medium-lived invite token (default 48 hrs) for new professor registration.
-     *
-     * @return a signed JWT string representing an invite code
-     */
-    public String generateInviteToken() {
-        Date now    = new Date();
-        Date expiry = new Date(now.getTime() + inviteExpirationMs);
-
-        return Jwts.builder()
-                .subject("admin-invite")
-                .claim(CLAIM_TYPE, TYPE_INVITE)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(signingKey)
@@ -273,16 +251,6 @@ public class JwtUtil {
         try {
             Claims claims = validateToken(token);
             return TYPE_SCAN.equals(claims.get(CLAIM_TYPE, String.class));
-        } catch (JwtException e) {
-            return false;
-        }
-    }
-
-    /** Returns true if the token is a valid INVITE token (not expired, correct type). */
-    public boolean isInviteToken(String token) {
-        try {
-            Claims claims = validateToken(token);
-            return TYPE_INVITE.equals(claims.get(CLAIM_TYPE, String.class));
         } catch (JwtException e) {
             return false;
         }

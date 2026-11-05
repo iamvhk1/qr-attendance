@@ -1,6 +1,7 @@
 package com.qrattend.exception;
 
 import com.qrattend.dto.ErrorResponse;
+import com.qrattend.mail.EmailDeliveryException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,8 +25,13 @@ public class GlobalExceptionHandler {
 
     // ── 400 Bad Request ─────────────────────────────────────
 
-    @ExceptionHandler(InvalidInviteCodeException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidInviteCode(InvalidInviteCodeException ex) {
+    @ExceptionHandler(InvalidOtpException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOtp(InvalidOtpException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(EmailNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleEmailNotAllowed(EmailNotAllowedException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
@@ -70,6 +76,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(com.qrattend.exception.AttendanceFraudException.class)
     public ResponseEntity<ErrorResponse> handleAttendanceFraud(com.qrattend.exception.AttendanceFraudException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    // ── 429 Too Many Requests ────────────────────────────────
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyRequests(TooManyRequestsException ex) {
+        HttpStatus status = HttpStatus.TOO_MANY_REQUESTS;
+        return ResponseEntity.status(status)
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                .body(ErrorResponse.of(status.value(), status.getReasonPhrase(), ex.getMessage()));
+    }
+
+    // ── 503 Service Unavailable (email provider down) ─────────
+
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ResponseEntity<ErrorResponse> handleEmailDelivery(EmailDeliveryException ex) {
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE,
+                "Could not send the verification email right now. Please try again in a few minutes.");
     }
 
     // ── 400 Validation Errors (@Valid) ──────────────────────

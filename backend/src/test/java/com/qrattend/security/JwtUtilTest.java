@@ -46,7 +46,7 @@ class JwtUtilTest {
 
     @BeforeEach
     void setUp() {
-        jwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 172_800_000L, 7200000L);
+        jwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 7200000L);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -206,7 +206,7 @@ class JwtUtilTest {
         @DisplayName("A token with 0ms expiration is immediately expired")
         void zeroExpirationToken() {
             // Create a JwtUtil instance with 0ms scan expiration
-            JwtUtil zeroExpiry = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, 0L, 20000L, 172_800_000L, 7200000L);
+            JwtUtil zeroExpiry = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, 0L, 20000L, 7200000L);
             String token = zeroExpiry.generateScanToken(UUID.randomUUID());
 
             assertThat(zeroExpiry.isTokenExpired(token)).isTrue();
@@ -243,7 +243,7 @@ class JwtUtilTest {
         void differentSecretFails() {
             JwtUtil otherJwtUtil = new JwtUtil(
                     "YW5vdGhlci1zZWNyZXQta2V5LXRoYXQtaXMtZGlmZmVyZW50LWZyb20tdGhlLW9yaWdpbmFsLWtleQ==",
-                    LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 172_800_000L, 7200000L);
+                    LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 7200000L);
 
             String token = otherJwtUtil.generateLoginToken(UUID.randomUUID(), "test@iitm.ac.in");
 
@@ -373,7 +373,7 @@ class JwtUtilTest {
         @Test
         @DisplayName("generateLoginToken with negative expiration creates an immediately expired token")
         void negativeExpiration_createsExpiredToken() {
-            JwtUtil localJwtUtil = new JwtUtil(TEST_SECRET, -3600000L, SCAN_EXPIRATION_MS, 20000L, 172_800_000L, 7200000L);
+            JwtUtil localJwtUtil = new JwtUtil(TEST_SECRET, -3600000L, SCAN_EXPIRATION_MS, 20000L, 7200000L);
             String token = localJwtUtil.generateLoginToken(UUID.randomUUID(), "test@test.com");
 
             assertThat(localJwtUtil.isTokenExpired(token)).isTrue();
@@ -382,7 +382,7 @@ class JwtUtilTest {
         @Test
         @DisplayName("generateScanToken with negative expiration creates an immediately expired token")
         void negativeExpirationScan_createsExpiredToken() {
-            JwtUtil localJwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, -1000L, 20000L, 172_800_000L, 7200000L);
+            JwtUtil localJwtUtil = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, -1000L, 20000L, 7200000L);
             String token = localJwtUtil.generateScanToken(UUID.randomUUID());
 
             assertThat(localJwtUtil.isTokenExpired(token)).isTrue();
@@ -453,7 +453,7 @@ class JwtUtilTest {
         void shortSecretKey_throwsWeakKeyException() {
             String shortSecret = "1234567890123456789012345678901"; // 31 bytes = 248 bits
 
-            assertThatThrownBy(() -> new JwtUtil(shortSecret, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 172_800_000L, 7200000L))
+            assertThatThrownBy(() -> new JwtUtil(shortSecret, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 7200000L))
                     .isInstanceOf(WeakKeyException.class);
         }
     }
@@ -489,109 +489,4 @@ class JwtUtilTest {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  INVITE TOKEN
-    // ═══════════════════════════════════════════════════════════
-
-    @Nested
-    @DisplayName("Invite Token")
-    class InviteTokenTests {
-
-        @Test
-        @DisplayName("generateInviteToken produces a non-blank JWT string")
-        void generatesNonBlankToken() {
-            String token = jwtUtil.generateInviteToken();
-            assertThat(token).isNotBlank();
-        }
-
-        @Test
-        @DisplayName("isInviteToken returns true for an invite token")
-        void isInviteTokenTrue() {
-            String token = jwtUtil.generateInviteToken();
-            assertThat(jwtUtil.isInviteToken(token)).isTrue();
-        }
-
-        @Test
-        @DisplayName("isInviteToken returns false for a login token")
-        void isInviteTokenFalseForLogin() {
-            String token = jwtUtil.generateLoginToken(UUID.randomUUID(), "test@iitm.ac.in");
-            assertThat(jwtUtil.isInviteToken(token)).isFalse();
-        }
-
-        @Test
-        @DisplayName("isInviteToken returns false for a scan token")
-        void isInviteTokenFalseForScan() {
-            String token = jwtUtil.generateScanToken(UUID.randomUUID());
-            assertThat(jwtUtil.isInviteToken(token)).isFalse();
-        }
-
-        @Test
-        @DisplayName("isLoginToken and isScanToken return false for an invite token")
-        void inviteTokenNotLoginOrScan() {
-            String token = jwtUtil.generateInviteToken();
-            assertThat(jwtUtil.isLoginToken(token)).isFalse();
-            assertThat(jwtUtil.isScanToken(token)).isFalse();
-        }
-
-        @Test
-        @DisplayName("extractTokenType returns INVITE for an invite token")
-        void extractTokenTypeReturnsInvite() {
-            String token = jwtUtil.generateInviteToken();
-            assertThat(jwtUtil.extractTokenType(token)).isEqualTo("INVITE");
-        }
-
-        @Test
-        @DisplayName("extractProfessorId throws IllegalStateException for an INVITE token")
-        void extractProfessorIdThrowsForInviteToken() {
-            String token = jwtUtil.generateInviteToken();
-            assertThatThrownBy(() -> jwtUtil.extractProfessorId(token))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("LOGIN");
-        }
-
-        @Test
-        @DisplayName("extractSessionId throws IllegalStateException for an INVITE token")
-        void extractSessionIdThrowsForInviteToken() {
-            String token = jwtUtil.generateInviteToken();
-            assertThatThrownBy(() -> jwtUtil.extractSessionId(token))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("SCAN");
-        }
-
-        @Test
-        @DisplayName("extractEmail throws IllegalStateException for an INVITE token")
-        void extractEmailThrowsForInviteToken() {
-            String token = jwtUtil.generateInviteToken();
-            assertThatThrownBy(() -> jwtUtil.extractEmail(token))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("LOGIN");
-        }
-
-        @Test
-        @DisplayName("isTokenExpired returns false for a fresh invite token")
-        void freshInviteTokenNotExpired() {
-            String token = jwtUtil.generateInviteToken();
-            assertThat(jwtUtil.isTokenExpired(token)).isFalse();
-        }
-
-        @Test
-        @DisplayName("Invite token with 0ms expiration is immediately expired")
-        void zeroExpirationInviteToken() {
-            JwtUtil zeroExpiry = new JwtUtil(TEST_SECRET, LOGIN_EXPIRATION_MS, SCAN_EXPIRATION_MS, 20000L, 0L, 7200000L);
-            String token = zeroExpiry.generateInviteToken();
-            assertThat(zeroExpiry.isTokenExpired(token)).isTrue();
-        }
-
-        @Test
-        @DisplayName("validateToken returns claims with subject 'admin-invite' and type INVITE")
-        void validateTokenReturnsClaims() {
-            String token = jwtUtil.generateInviteToken();
-            Claims claims = jwtUtil.validateToken(token);
-
-            assertThat(claims.getSubject()).isEqualTo("admin-invite");
-            assertThat(claims.get("type", String.class)).isEqualTo("INVITE");
-            assertThat(claims.getIssuedAt()).isNotNull();
-            assertThat(claims.getExpiration()).isNotNull();
-        }
-    }
 }

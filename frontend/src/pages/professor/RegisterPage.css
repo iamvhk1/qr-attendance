@@ -92,6 +92,50 @@
   line-height: 1.5;
 }
 
+/* Step 2: "Code sent to …" bar, resend row, info notice */
+.register-sent-to {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.register-sent-to strong { color: var(--text-primary); font-weight: 600; }
+
+.register-resend {
+  margin-top: calc(-1 * var(--space-2));
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.register-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--primary-400);
+  cursor: pointer;
+}
+.register-link-btn:hover:not(:disabled) { color: var(--primary-200); text-decoration: underline; }
+.register-link-btn:disabled { color: var(--text-muted); cursor: default; }
+
+.register-notice {
+  font-size: 0.8125rem;
+  color: var(--accent-400);
+  background: var(--accent-900);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  max-width: 100%;
+}
+
 .register-footer-note {
   margin-top: var(--space-4);
   font-size: 0.8125rem;

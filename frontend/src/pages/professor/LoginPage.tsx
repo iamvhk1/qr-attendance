@@ -112,7 +112,7 @@ const LoginPage: React.FC = () => {
           <p className="login-footer-note">
             Don't have an account?{' '}
             <Link to="/register" className="login-register-link">
-              Register with invite code
+              Create one with your IITM email
             </Link>
           </p>
         </Card>

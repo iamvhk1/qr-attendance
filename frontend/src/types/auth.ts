@@ -6,6 +6,12 @@ export interface LoginResponse {
   fullName: string;
 }
 
+/** Mirrors OtpResponse.java — POST /api/auth/otp */
+export interface OtpResponse {
+  expiresInSeconds: number;
+  resendAfterSeconds: number;
+}
+
 /** Mirrors RegisterResponse.java */
 export interface RegisterResponse {
   professorId: string;

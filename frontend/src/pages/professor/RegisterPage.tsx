@@ -1,73 +1,139 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardHeader, Button, Badge, Input } from '../../components/ui';
-import { KeyRound, UserPlus } from 'lucide-react';
+import { Mail, ShieldCheck, UserPlus } from 'lucide-react';
 import { apiFetch, ApiError } from '../../lib/api';
-import type { RegisterResponse } from '../../types/auth';
+import type { OtpResponse, RegisterResponse } from '../../types/auth';
 import './RegisterPage.css';
 
-interface FormState {
-  inviteCode: string;
+// Mirrors app.registration.* on the backend (which is the real check).
+const ALLOWED_DOMAIN = 'iitm.ac.in';
+const BLOCKED_DOMAIN = 'smail.iitm.ac.in';
+
+const matchesDomain = (domain: string, base: string) => domain === base || domain.endsWith(`.${base}`);
+
+/** Returns an error message for the email, or null if it looks acceptable. */
+function emailProblem(raw: string): string | null {
+  const email = raw.trim().toLowerCase();
+  if (!email) return 'Email is required.';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address.';
+  const domain = email.slice(email.lastIndexOf('@') + 1);
+  if (matchesDomain(domain, BLOCKED_DOMAIN)) {
+    return `Student addresses (@${BLOCKED_DOMAIN}) can't register. Use your faculty email.`;
+  }
+  if (!matchesDomain(domain, ALLOWED_DOMAIN)) return `Use your IIT Madras email (…@${ALLOWED_DOMAIN}).`;
+  return null;
+}
+
+interface DetailsState {
+  otp: string;
   fullName: string;
-  email: string;
   password: string;
   confirmPassword: string;
 }
 
-const INIT: FormState = {
-  inviteCode: '',
-  fullName: '',
-  email: '',
-  password: '',
-  confirmPassword: '',
-};
+const INIT_DETAILS: DetailsState = { otp: '', fullName: '', password: '', confirmPassword: '' };
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
-  const [form, setForm]     = useState<FormState>(INIT);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors]   = useState<Partial<FormState>>({});
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [success, setSuccess]   = useState(false);
 
-  const set = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }));
-    // Clear field error on change
+  const [step, setStep]         = useState<'email' | 'details'>('email');
+  const [email, setEmail]       = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [details, setDetails]   = useState<DetailsState>(INIT_DETAILS);
+  const [errors, setErrors]     = useState<Partial<DetailsState>>({});
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+  const [notice, setNotice]     = useState<string | null>(null);
+  const [sending, setSending]   = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [success, setSuccess]   = useState(false);
+  const [resendIn, setResendIn] = useState(0);
+  const [expiresMinutes, setExpiresMinutes] = useState(10);
+  const otpRef = useRef<HTMLInputElement>(null);
+
+  // Resend countdown
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  // ── Step 1: send the code ──
+
+  const sendCode = async (isResend = false) => {
+    setApiError(null);
+    setAlreadyRegistered(false);
+    setNotice(null);
+    const problem = emailProblem(email);
+    setEmailError(problem);
+    if (problem) return;
+
+    setSending(true);
+    try {
+      const res = await apiFetch<OtpResponse>('/auth/otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      setResendIn(res.resendAfterSeconds);
+      setExpiresMinutes(Math.round(res.expiresInSeconds / 60));
+      setStep('details');
+      setNotice(isResend ? 'A new code has been sent. Earlier codes no longer work.' : null);
+      if (isResend) setDetails((d) => ({ ...d, otp: '' }));
+      setTimeout(() => otpRef.current?.focus(), 0);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 409) setAlreadyRegistered(true);
+        const waitMatch = err.status === 429 ? /wait (\d+) seconds/.exec(err.message) : null;
+        if (waitMatch) setResendIn(Number(waitMatch[1]));
+        if (step === 'email' && err.status === 400) setEmailError(err.message);
+        else setApiError(err.message);
+      } else {
+        setApiError('Could not send the code. Please try again.');
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleEmailSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendCode(false);
+  };
+
+  const changeEmail = () => {
+    setStep('email');
+    setDetails((d) => ({ ...d, otp: '' }));
+    setErrors({});
+    setApiError(null);
+    setNotice(null);
+  };
+
+  // ── Step 2: verify + create the account ──
+
+  const setField = (field: keyof DetailsState) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = field === 'otp' ? e.target.value.replace(/\D/g, '').slice(0, 6) : e.target.value;
+    setDetails((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
   };
 
-  const validate = (): boolean => {
-    const errs: Partial<FormState> = {};
-
-    if (!form.inviteCode.trim()) errs.inviteCode = 'Invite code is required.';
-    if (!form.fullName.trim())   errs.fullName   = 'Full name is required.';
-
-    if (!form.email.trim()) {
-      errs.email = 'Email is required.';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      errs.email = 'Enter a valid email address.';
-    }
-
-    if (!form.password) {
-      errs.password = 'Password is required.';
-    } else if (form.password.length < 8) {
-      errs.password = 'Password must be at least 8 characters.';
-    }
-
-    if (!form.confirmPassword) {
-      errs.confirmPassword = 'Please confirm your password.';
-    } else if (form.password !== form.confirmPassword) {
-      errs.confirmPassword = 'Passwords do not match.';
-    }
-
+  const validateDetails = (): boolean => {
+    const errs: Partial<DetailsState> = {};
+    if (!/^\d{6}$/.test(details.otp)) errs.otp = 'Enter the 6-digit code from the email.';
+    if (!details.fullName.trim()) errs.fullName = 'Full name is required.';
+    if (!details.password) errs.password = 'Password is required.';
+    else if (details.password.length < 8) errs.password = 'Password must be at least 8 characters.';
+    if (!details.confirmPassword) errs.confirmPassword = 'Please confirm your password.';
+    else if (details.password !== details.confirmPassword) errs.confirmPassword = 'Passwords do not match.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setApiError(null);
-    if (!validate()) return;
+    setNotice(null);
+    if (!validateDetails()) return;
 
     setLoading(true);
     try {
@@ -75,17 +141,18 @@ const RegisterPage: React.FC = () => {
       await apiFetch<RegisterResponse>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          inviteCode: form.inviteCode.trim(),
-          fullName:   form.fullName.trim(),
-          email:      form.email.trim(),
-          password:   form.password,
+          email:    email.trim(),
+          otp:      details.otp,
+          fullName: details.fullName.trim(),
+          password: details.password,
         }),
       });
       setSuccess(true);
       setTimeout(() => navigate('/login'), 2500);
     } catch (err) {
       if (err instanceof ApiError) {
-        // Backend returns semicolon-joined field errors — display them clearly
+        if (err.status === 409) setAlreadyRegistered(true);
+        // Backend returns semicolon-joined field errors — show one per line
         setApiError(err.message.replace(/;\s*/g, '\n'));
       } else {
         setApiError('An unexpected error occurred. Please try again.');
@@ -111,6 +178,15 @@ const RegisterPage: React.FC = () => {
     );
   }
 
+  const errorBlock = apiError && (
+    <p className="register-error" role="alert" style={{ whiteSpace: 'pre-line' }}>
+      {apiError}
+      {alreadyRegistered && (
+        <> <Link to="/login" className="register-login-link">Sign in</Link></>
+      )}
+    </p>
+  );
+
   return (
     <main className="register-root">
       <div className="register-orb register-orb-1" aria-hidden="true" />
@@ -123,95 +199,125 @@ const RegisterPage: React.FC = () => {
           </span>
           <div>
             <h1 className="register-app-name gradient-text">Create Account</h1>
-            <p className="register-app-tagline">Register with an admin invite code</p>
+            <p className="register-app-tagline">For IIT Madras faculty</p>
           </div>
         </div>
 
         <Card glass accent padding="lg" className="register-card">
           <CardHeader
             title="Professor Registration"
-            subtitle="Fill in your details below"
-            action={<Badge variant="warning" dot>Invite only</Badge>}
+            subtitle={step === 'email' ? 'Step 1 of 2 — verify your email' : 'Step 2 of 2 — your details'}
+            action={<Badge variant="primary" dot>@{ALLOWED_DOMAIN}</Badge>}
           />
 
-          <form className="register-form stagger" onSubmit={handleSubmit} noValidate>
-            <Input
-              label="Invite code"
-              type="text"
-              id="register-invite"
-              placeholder="Paste your invite code"
-              leftAddon={<KeyRound size={16} />}
-              value={form.inviteCode}
-              onChange={set('inviteCode')}
-              error={errors.inviteCode}
-              disabled={loading}
-              autoComplete="off"
-            />
+          {step === 'email' ? (
+            <form className="register-form stagger" onSubmit={handleEmailSubmit} noValidate>
+              <Input
+                label="Faculty email"
+                type="email"
+                id="register-email"
+                placeholder={`name@${ALLOWED_DOMAIN}`}
+                leftAddon={<Mail size={16} />}
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setEmailError(null); setAlreadyRegistered(false); }}
+                error={emailError ?? undefined}
+                hint={emailError ? undefined : `We'll email you a 6-digit code. Student @${BLOCKED_DOMAIN} addresses can't register.`}
+                disabled={sending}
+                autoComplete="email"
+                autoFocus
+              />
+              {alreadyRegistered && !apiError && (
+                <p className="register-error" role="alert">
+                  An account with this email already exists.{' '}
+                  <Link to="/login" className="register-login-link">Sign in</Link>
+                </p>
+              )}
+              {errorBlock}
+              <Button type="submit" variant="primary" size="lg" fullWidth loading={sending}>
+                Send verification code
+              </Button>
+            </form>
+          ) : (
+            <form className="register-form stagger" onSubmit={handleRegister} noValidate>
+              <div className="register-sent-to">
+                <span>Code sent to <strong>{email.trim().toLowerCase()}</strong></span>
+                <button type="button" className="register-link-btn" onClick={changeEmail} disabled={loading}>
+                  Change email
+                </button>
+              </div>
 
-            <Input
-              label="Full name"
-              type="text"
-              id="register-name"
-              placeholder="Dr. Jane Smith"
-              value={form.fullName}
-              onChange={set('fullName')}
-              error={errors.fullName}
-              disabled={loading}
-              autoComplete="name"
-            />
+              <Input
+                ref={otpRef}
+                label="Verification code"
+                type="text"
+                id="register-otp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6-digit code"
+                leftAddon={<ShieldCheck size={16} />}
+                value={details.otp}
+                onChange={setField('otp')}
+                error={errors.otp}
+                hint={errors.otp ? undefined : `Check your inbox (and spam). The code expires in ${expiresMinutes} minutes.`}
+                disabled={loading}
+                maxLength={6}
+              />
 
-            <Input
-              label="Email address"
-              type="email"
-              id="register-email"
-              placeholder="professor@college.edu"
-              value={form.email}
-              onChange={set('email')}
-              error={errors.email}
-              disabled={loading}
-              autoComplete="email"
-            />
+              <div className="register-resend">
+                {resendIn > 0 ? (
+                  <span>You can request a new code in {resendIn}s</span>
+                ) : (
+                  <button type="button" className="register-link-btn" onClick={() => sendCode(true)} disabled={sending || loading}>
+                    {sending ? 'Sending…' : 'Resend code'}
+                  </button>
+                )}
+              </div>
 
-            <Input
-              label="Password"
-              type="password"
-              id="register-password"
-              placeholder="Min. 8 characters"
-              value={form.password}
-              onChange={set('password')}
-              error={errors.password}
-              disabled={loading}
-              autoComplete="new-password"
-            />
+              {notice && <p className="register-notice" role="status">{notice}</p>}
 
-            <Input
-              label="Confirm password"
-              type="password"
-              id="register-confirm"
-              placeholder="Repeat your password"
-              value={form.confirmPassword}
-              onChange={set('confirmPassword')}
-              error={errors.confirmPassword}
-              disabled={loading}
-              autoComplete="new-password"
-            />
+              <Input
+                label="Full name"
+                type="text"
+                id="register-name"
+                placeholder="Dr. Jane Smith"
+                value={details.fullName}
+                onChange={setField('fullName')}
+                error={errors.fullName}
+                disabled={loading}
+                autoComplete="name"
+              />
 
-            {apiError && (
-              <p className="register-error" role="alert" style={{ whiteSpace: 'pre-line' }}>
-                {apiError}
-              </p>
-            )}
+              <Input
+                label="Password"
+                type="password"
+                id="register-password"
+                placeholder="Min. 8 characters"
+                value={details.password}
+                onChange={setField('password')}
+                error={errors.password}
+                disabled={loading}
+                autoComplete="new-password"
+              />
 
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={loading}
-            >
-              Create Account
-            </Button>
-          </form>
+              <Input
+                label="Confirm password"
+                type="password"
+                id="register-confirm"
+                placeholder="Repeat your password"
+                value={details.confirmPassword}
+                onChange={setField('confirmPassword')}
+                error={errors.confirmPassword}
+                disabled={loading}
+                autoComplete="new-password"
+              />
+
+              {errorBlock}
+
+              <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
+                Create Account
+              </Button>
+            </form>
+          )}
 
           <p className="register-footer-note">
             Already have an account?{' '}
