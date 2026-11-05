@@ -57,6 +57,8 @@ class SecurityIntegrationTest {
     @Autowired private ProfessorRepository professorRepository;
     @Autowired private CourseRepository courseRepository;
     @Autowired private QrSessionRepository sessionRepository;
+    @Autowired private DoubtRepository doubtRepository;
+    @Autowired private AttendanceRepository attendanceRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
     // ── Helpers ─────────────────────────────────────────────────────
@@ -729,6 +731,145 @@ class SecurityIntegrationTest {
             assertThat(body).doesNotContain("SQL");
             assertThat(body).doesNotContain("hibernate");
             assertThat(body).doesNotContain("table");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GROUP 9: Session Doubts Access Control
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Group 9 — Session Doubts Access Control")
+    class SessionDoubtsAccess {
+
+        private void postDoubt(UUID sessionId, String question) {
+            QrSession session = sessionRepository.findById(sessionId).orElseThrow();
+            doubtRepository.save(TestDataFactory.doubt(session, question));
+        }
+
+        @Test
+        @DisplayName("Owner gets 200 with the session's doubts")
+        void ownerCanReadDoubts() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtOwner@test.com", "Pass1234!");
+            UUID sessionId = createLiveSession(createCourse(jwtA), jwtUtil.extractProfessorId(jwtA));
+            postDoubt(sessionId, "What is paging?");
+            postDoubt(sessionId, "Is this on the exam?");
+
+            MvcResult result = mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            assertThat(body.isArray()).isTrue();
+            assertThat(body.size()).isEqualTo(2);
+            assertThat(body.findValuesAsText("text"))
+                    .containsExactlyInAnyOrder("What is paging?", "Is this on the exam?");
+            assertThat(body.findValuesAsText("sessionId")).containsOnly(sessionId.toString());
+        }
+
+        @Test
+        @DisplayName("Owner gets 200 with an empty array when no doubts were posted")
+        void ownerGetsEmptyArray() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtEmpty@test.com", "Pass1234!");
+            UUID sessionId = createLiveSession(createCourse(jwtA), jwtUtil.extractProfessorId(jwtA));
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk())
+                    .andExpect(content().json("[]"));
+        }
+
+        @Test
+        @DisplayName("Owner can still read doubts after the session has expired")
+        void ownerCanReadDoubtsOfExpiredSession() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtExpired@test.com", "Pass1234!");
+            UUID sessionId = createExpiredSession(createCourse(jwtA), jwtUtil.extractProfessorId(jwtA));
+            postDoubt(sessionId, "Late question");
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].text").value("Late question"));
+        }
+
+        @Test
+        @DisplayName("Doubts from the owner's other sessions are not included")
+        void doubtsAreScopedToTheRequestedSession() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtScope@test.com", "Pass1234!");
+            UUID profA = jwtUtil.extractProfessorId(jwtA);
+            UUID courseId = createCourse(jwtA);
+            UUID session1 = createLiveSession(courseId, profA);
+            UUID session2 = createExpiredSession(courseId, profA);
+            postDoubt(session1, "Session 1 doubt");
+            postDoubt(session2, "Session 2 doubt");
+
+            mockMvc.perform(get("/api/sessions/" + session1 + "/doubts")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].text").value("Session 1 doubt"));
+        }
+
+        @Test
+        @DisplayName("Professor B cannot read Professor A's session doubts → 403, nothing leaked")
+        void otherProfessorGets403() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtA@test.com", "Pass1234!");
+            String jwtB = createProfessorAndLogin("doubtB@test.com", "Pass1234!");
+            UUID sessionA = createLiveSession(createCourse(jwtA), jwtUtil.extractProfessorId(jwtA));
+            postDoubt(sessionA, "Private question from class A");
+
+            MvcResult result = mockMvc.perform(get("/api/sessions/" + sessionA + "/doubts")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden())
+                    .andReturn();
+
+            assertThat(result.getResponse().getContentAsString())
+                    .doesNotContain("Private question from class A");
+        }
+
+        @Test
+        @DisplayName("Non-existent session → 404")
+        void nonExistentSessionReturns404() throws Exception {
+            String jwtA = createProfessorAndLogin("doubt404@test.com", "Pass1234!");
+
+            mockMvc.perform(get("/api/sessions/" + UUID.randomUUID() + "/doubts")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("No Authorization header → 401")
+        void noTokenReturns401() throws Exception {
+            mockMvc.perform(get("/api/sessions/" + UUID.randomUUID() + "/doubts"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("Student SCAN token for that session → 403 (needs ROLE_PROFESSOR)")
+        void scanTokenReturns403() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtScan@test.com", "Pass1234!");
+            UUID sessionId = createLiveSession(createCourse(jwtA), jwtUtil.extractProfessorId(jwtA));
+            postDoubt(sessionId, "Question");
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts")
+                            .header("Authorization", "Bearer " + jwtUtil.generateScanToken(sessionId)))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("Student ATTENDANCE token (the one used to post doubts) → 403")
+        void attendanceTokenReturns403() throws Exception {
+            String jwtA = createProfessorAndLogin("doubtAtt@test.com", "Pass1234!");
+            UUID sessionId = createLiveSession(createCourse(jwtA), jwtUtil.extractProfessorId(jwtA));
+            QrSession session = sessionRepository.findById(sessionId).orElseThrow();
+            Attendance att = attendanceRepository.save(
+                    TestDataFactory.pendingAttendance(session, "CS24B001"));
+            postDoubt(sessionId, "Question");
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts")
+                            .header("Authorization", "Bearer " + jwtUtil.generateAttendanceToken(att.getId())))
+                    .andExpect(status().isForbidden());
         }
     }
 }

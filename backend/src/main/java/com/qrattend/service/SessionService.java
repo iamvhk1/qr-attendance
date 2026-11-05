@@ -2,6 +2,7 @@ package com.qrattend.service;
 
 import com.google.zxing.WriterException;
 import com.qrattend.dto.session.AttendanceResponse;
+import com.qrattend.dto.session.DoubtResponse;
 import com.qrattend.dto.session.ManualAttendanceRequest;
 import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
@@ -18,6 +19,7 @@ import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
 import com.qrattend.repository.AttendanceRepository;
 import com.qrattend.repository.CourseRepository;
+import com.qrattend.repository.DoubtRepository;
 import com.qrattend.repository.HeartbeatRepository;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.repository.QrSessionRepository;
@@ -70,6 +72,7 @@ public class SessionService {
     private final AttendanceRepository attendanceRepository;
     private final HeartbeatRepository heartbeatRepository;
     private final StudentRepository studentRepository;
+    private final DoubtRepository doubtRepository;
     private final JwtUtil jwtUtil;
 
     @Value("${app.session.default-duration-seconds}")
@@ -345,6 +348,25 @@ public class SessionService {
         return attendanceRepository.findBySessionId(sessionId)
                 .stream()
                 .map(AttendanceResponse::fromEntity)
+                .toList();
+    }
+
+    /**
+     * Returns all doubts posted by students in a session, oldest first.
+     *
+     * @param sessionId   the session UUID
+     * @param professorId the authenticated professor's UUID
+     * @return list of {@link DoubtResponse} DTOs
+     * @throws ResourceNotFoundException if the session does not exist
+     * @throws ForbiddenException        if the professor does not own the session
+     */
+    @Transactional(readOnly = true)
+    public List<DoubtResponse> listDoubts(UUID sessionId, UUID professorId) {
+        getOwnedSession(sessionId, professorId);
+
+        return doubtRepository.findBySessionIdOrderByPostedAtAsc(sessionId)
+                .stream()
+                .map(DoubtResponse::from)
                 .toList();
     }
 

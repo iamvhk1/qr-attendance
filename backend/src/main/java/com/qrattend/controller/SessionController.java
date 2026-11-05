@@ -7,7 +7,6 @@ import com.qrattend.dto.session.OverrideRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.dto.session.DoubtResponse;
-import com.qrattend.repository.DoubtRepository;
 import com.qrattend.service.SessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +40,6 @@ import java.util.UUID;
 public class SessionController {
 
     private final SessionService sessionService;
-    private final DoubtRepository doubtRepository;
 
     // ── POST /api/sessions ───────────────────────────────────
 
@@ -214,14 +212,16 @@ public class SessionController {
 
     // ── GET /api/sessions/{id}/doubts ────────────────────────
 
+    /**
+     * Returns the doubts students posted during a session.
+     *
+     * @return 200 OK with a list of {@link DoubtResponse};
+     *         403 if the professor does not own the session; 404 if it does not exist
+     */
     @GetMapping("/{id}/doubts")
     public ResponseEntity<List<DoubtResponse>> getDoubts(@PathVariable UUID id) {
-        List<DoubtResponse> dtos = doubtRepository
-                .findBySessionIdOrderByPostedAtAsc(id)
-                .stream()
-                .map(DoubtResponse::from)
-                .toList();
-        return ResponseEntity.ok(dtos);
+        UUID professorId = getProfessorId();
+        return ResponseEntity.ok(sessionService.listDoubts(id, professorId));
     }
 
     // ── Helper ───────────────────────────────────────────────

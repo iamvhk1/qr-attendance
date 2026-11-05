@@ -1,6 +1,7 @@
 package com.qrattend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qrattend.dto.session.DoubtResponse;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.exception.ForbiddenException;
@@ -10,7 +11,6 @@ import com.qrattend.exception.SessionClosedException;
 import com.qrattend.security.JwtAuthenticationEntryPoint;
 import com.qrattend.security.JwtAuthenticationFilter;
 import com.qrattend.security.JwtUtil;
-import com.qrattend.repository.DoubtRepository;
 import com.qrattend.service.SessionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +35,9 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -62,7 +64,6 @@ class SessionControllerTest {
     @MockBean private JwtUtil jwtUtil;
     @MockBean private JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    @MockBean private DoubtRepository doubtRepository;
 
     private final UUID profId    = UUID.randomUUID();
     private final UUID courseId  = UUID.randomUUID();
@@ -392,6 +393,84 @@ class SessionControllerTest {
 
             mockMvc.perform(get("/api/sessions/" + sessionId + "/qr"))
                     .andExpect(status().isInternalServerError());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  GET /api/sessions/{id}/doubts
+    // ══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("GET /api/sessions/{id}/doubts")
+    class GetDoubts {
+
+        @Test
+        @DisplayName("Returns 200 with doubts serialised as {id, sessionId, text, postedAt}")
+        void returns200WithDoubts() throws Exception {
+            UUID d1 = UUID.randomUUID();
+            UUID d2 = UUID.randomUUID();
+            given(sessionService.listDoubts(sessionId, profId)).willReturn(List.of(
+                    new DoubtResponse(d1, sessionId, "What is paging?", Instant.parse("2026-11-05T10:00:00Z")),
+                    new DoubtResponse(d2, sessionId, "Is this on the exam?", Instant.parse("2026-11-05T10:01:00Z"))));
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$", hasSize(2)))
+                    .andExpect(jsonPath("$[0].id").value(d1.toString()))
+                    .andExpect(jsonPath("$[0].sessionId").value(sessionId.toString()))
+                    .andExpect(jsonPath("$[0].text").value("What is paging?"))
+                    .andExpect(jsonPath("$[0].postedAt").exists())
+                    .andExpect(jsonPath("$[1].id").value(d2.toString()))
+                    .andExpect(jsonPath("$[1].text").value("Is this on the exam?"));
+        }
+
+        @Test
+        @DisplayName("Returns 200 with an empty array when no doubts were posted")
+        void returns200WithEmptyList() throws Exception {
+            given(sessionService.listDoubts(sessionId, profId)).willReturn(List.of());
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$", hasSize(0)));
+        }
+
+        @Test
+        @DisplayName("Passes the authenticated professor's ID to the service for the ownership check")
+        void passesAuthenticatedProfessorIdToService() throws Exception {
+            given(sessionService.listDoubts(sessionId, profId)).willReturn(List.of());
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts"))
+                    .andExpect(status().isOk());
+
+            then(sessionService).should().listDoubts(sessionId, profId);
+        }
+
+        @Test
+        @DisplayName("Returns 403 when professor does not own the session")
+        void returns403WhenNotOwner() throws Exception {
+            given(sessionService.listDoubts(sessionId, profId))
+                    .willThrow(new ForbiddenException("You do not own session " + sessionId));
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("Returns 404 when session does not exist")
+        void returns404WhenSessionNotFound() throws Exception {
+            given(sessionService.listDoubts(sessionId, profId))
+                    .willThrow(new ResourceNotFoundException("Session not found: " + sessionId));
+
+            mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("Returns 400 when the session ID is not a valid UUID")
+        void returns400ForMalformedId() throws Exception {
+            mockMvc.perform(get("/api/sessions/not-a-uuid/doubts"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

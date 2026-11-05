@@ -2,12 +2,14 @@ package com.qrattend.service;
 
 import com.google.zxing.WriterException;
 import com.qrattend.dto.session.AttendanceResponse;
+import com.qrattend.dto.session.DoubtResponse;
 import com.qrattend.dto.session.ManualAttendanceRequest;
 import com.qrattend.dto.session.SessionRequest;
 import com.qrattend.dto.session.SessionResponse;
 import com.qrattend.entity.Attendance;
 import com.qrattend.entity.AttendanceStatus;
 import com.qrattend.entity.Course;
+import com.qrattend.entity.Doubt;
 import com.qrattend.entity.Professor;
 import com.qrattend.entity.QrSession;
 import com.qrattend.entity.Student;
@@ -17,6 +19,7 @@ import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
 import com.qrattend.repository.AttendanceRepository;
 import com.qrattend.repository.CourseRepository;
+import com.qrattend.repository.DoubtRepository;
 import com.qrattend.repository.HeartbeatRepository;
 import com.qrattend.repository.ProfessorRepository;
 import com.qrattend.repository.QrSessionRepository;
@@ -61,6 +64,7 @@ class SessionServiceTest {
     @Mock private AttendanceRepository attendanceRepository;
     @Mock private HeartbeatRepository heartbeatRepository;
     @Mock private StudentRepository studentRepository;
+    @Mock private DoubtRepository doubtRepository;
     @Mock private JwtUtil jwtUtil;
 
     @InjectMocks private SessionService sessionService;
@@ -1058,6 +1062,70 @@ class SessionServiceTest {
 
             verifyNoInteractions(studentRepository);
             verifyNoInteractions(attendanceRepository);
+        }
+    }
+    // ══════════════════════════════════════════════════════════════
+    //  listDoubts
+    // ══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("listDoubts")
+    class ListDoubts {
+
+        private QrSession buildSession() {
+            return QrSession.builder()
+                    .id(sessionId).course(course).professor(professor)
+                    .expiresAt(Instant.now().plus(5, ChronoUnit.MINUTES))
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Returns mapped doubts for the owning professor")
+        void returnsDoubtsForOwner() {
+            QrSession session = buildSession();
+            Doubt d = Doubt.builder().id(UUID.randomUUID()).session(session)
+                    .question("Will this be on the exam?").build();
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(doubtRepository.findBySessionIdOrderByPostedAtAsc(sessionId)).thenReturn(List.of(d));
+
+            List<DoubtResponse> result = sessionService.listDoubts(sessionId, profId);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).text()).isEqualTo("Will this be on the exam?");
+            assertThat(result.get(0).sessionId()).isEqualTo(sessionId);
+        }
+
+        @Test
+        @DisplayName("Returns an empty list when no doubts were posted")
+        void returnsEmptyListWhenNoDoubts() {
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(buildSession()));
+            when(doubtRepository.findBySessionIdOrderByPostedAtAsc(sessionId)).thenReturn(List.of());
+
+            assertThat(sessionService.listDoubts(sessionId, profId)).isEmpty();
+            verify(doubtRepository).findBySessionIdOrderByPostedAtAsc(sessionId);
+        }
+
+        @Test
+        @DisplayName("Throws ForbiddenException when professor does not own the session")
+        void throwsForbiddenWhenNotOwner() {
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(buildSession()));
+
+            assertThatThrownBy(() -> sessionService.listDoubts(sessionId, otherProfId))
+                    .isInstanceOf(ForbiddenException.class);
+
+            verifyNoInteractions(doubtRepository);
+        }
+
+        @Test
+        @DisplayName("Throws ResourceNotFoundException when session does not exist")
+        void throwsNotFoundWhenSessionAbsent() {
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> sessionService.listDoubts(sessionId, profId))
+                    .isInstanceOf(ResourceNotFoundException.class);
+
+            verifyNoInteractions(doubtRepository);
         }
     }
 }
