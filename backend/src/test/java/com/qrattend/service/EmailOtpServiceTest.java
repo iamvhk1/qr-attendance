@@ -139,6 +139,22 @@ class EmailOtpServiceTest {
         }
 
         @Test
+        @DisplayName("smail is allowed once it is removed from the blocked list (temporary testing setup)")
+        void smailAllowedWhenUnblocked() {
+            EmailOtpService unblocked = new EmailOtpService(otpRepository, professorRepository,
+                    new BCryptPasswordEncoder(4), sender, List.of("iitm.ac.in"), List.of("none.invalid"),
+                    600, 60, 5, 5, 250);
+            unblocked.setClock(clock);
+
+            assertThatCode(() -> unblocked.assertAllowed("cs24b001@smail.iitm.ac.in")).doesNotThrowAnyException();
+            unblocked.requestOtp("CS24B001@smail.iitm.ac.in");
+            assertThat(sent.get(0)[0]).isEqualTo("cs24b001@smail.iitm.ac.in");
+            // non-IITM addresses are still refused
+            assertThatThrownBy(() -> unblocked.assertAllowed("someone@gmail.com"))
+                    .isInstanceOf(EmailNotAllowedException.class);
+        }
+
+        @Test
         @DisplayName("an empty allowed-domain list is a configuration error")
         void emptyAllowedListFailsFast() {
             assertThatThrownBy(() -> new EmailOtpService(otpRepository, professorRepository,

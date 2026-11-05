@@ -6,22 +6,16 @@ import { apiFetch, ApiError } from '../../lib/api';
 import type { OtpResponse, RegisterResponse } from '../../types/auth';
 import './RegisterPage.css';
 
-// Mirrors app.registration.* on the backend (which is the real check).
+// Display only. Which domains may register is decided by the server
+// (app.registration.allowed-domains / blocked-domains, set from Render), and its
+// error message is shown under the field — so the page doesn't duplicate those rules.
 const ALLOWED_DOMAIN = 'iitm.ac.in';
-const BLOCKED_DOMAIN = 'smail.iitm.ac.in';
 
-const matchesDomain = (domain: string, base: string) => domain === base || domain.endsWith(`.${base}`);
-
-/** Returns an error message for the email, or null if it looks acceptable. */
+/** Basic format check only; the server enforces the domain rules. */
 function emailProblem(raw: string): string | null {
-  const email = raw.trim().toLowerCase();
+  const email = raw.trim();
   if (!email) return 'Email is required.';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address.';
-  const domain = email.slice(email.lastIndexOf('@') + 1);
-  if (matchesDomain(domain, BLOCKED_DOMAIN)) {
-    return `Student addresses (@${BLOCKED_DOMAIN}) can't register. Use your faculty email.`;
-  }
-  if (!matchesDomain(domain, ALLOWED_DOMAIN)) return `Use your IIT Madras email (…@${ALLOWED_DOMAIN}).`;
   return null;
 }
 
@@ -221,7 +215,7 @@ const RegisterPage: React.FC = () => {
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); setEmailError(null); setAlreadyRegistered(false); }}
                 error={emailError ?? undefined}
-                hint={emailError ? undefined : `We'll email you a 6-digit code. Student @${BLOCKED_DOMAIN} addresses can't register.`}
+                hint={emailError ? undefined : `Use your IIT Madras email. We'll send you a 6-digit code.`}
                 disabled={sending}
                 autoComplete="email"
                 autoFocus
