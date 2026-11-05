@@ -131,6 +131,18 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    // ── 409 Conflict (unique constraint hit by a concurrent request) ──
+    // e.g. two first scans of the same roll number arriving together: the DB's
+    // (session_id, roll_number) constraint lets only one through.
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(
+            org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return buildResponse(HttpStatus.CONFLICT,
+                "This conflicts with a request that was just made. Please refresh and try again.");
+    }
+
     // ── 500 Internal Server Error (fallback) ────────────────
 
     @ExceptionHandler(Exception.class)

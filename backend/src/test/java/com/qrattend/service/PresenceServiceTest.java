@@ -163,6 +163,99 @@ class PresenceServiceTest {
         }
 
         @Test
+        @DisplayName("Rescan of an already-confirmed roll number is rejected and leaves it untouched")
+        void rescanOfConfirmedRejected() {
+            attendance.setStatus(AttendanceStatus.CONFIRMED);
+            ScanRequest req = new ScanRequest(rollNumber, null);
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, rollNumber)).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, rollNumber)).thenReturn(Optional.of(attendance));
+
+            assertThatThrownBy(() -> presenceService.submitScan(sessionId, req))
+                    .isInstanceOf(com.qrattend.exception.DuplicateResourceException.class)
+                    .hasMessageContaining("already marked present");
+
+            assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
+            assertThat(attendance.getCurrentNonce()).isEqualTo("mock-nonce-123");
+            verify(attendanceRepository, never()).save(any());
+            verify(heartbeatRepository, never()).deleteBySessionIdAndRollNumber(any(), any());
+            verify(jwtUtil, never()).generateAttendanceToken(any());
+        }
+
+        @Test
+        @DisplayName("Rescan while the pending scan's tab is still sending heartbeats is rejected")
+        void rescanOfActivePendingRejected() {
+            attendance.setLastHeartbeatAt(Instant.now().minusSeconds(3));
+            ScanRequest req = new ScanRequest(rollNumber, null);
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, rollNumber)).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, rollNumber)).thenReturn(Optional.of(attendance));
+
+            assertThatThrownBy(() -> presenceService.submitScan(sessionId, req))
+                    .isInstanceOf(com.qrattend.exception.DuplicateResourceException.class)
+                    .hasMessageContaining("already being verified");
+
+            assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.PENDING);
+            assertThat(attendance.getCurrentNonce()).isEqualTo("mock-nonce-123");
+            verify(attendanceRepository, never()).save(any());
+            verify(heartbeatRepository, never()).deleteBySessionIdAndRollNumber(any(), any());
+        }
+
+        @Test
+        @DisplayName("Rescan right after the first scan (no heartbeat yet) is rejected")
+        void rescanOfJustScannedRejected() {
+            attendance.setPresenceStart(Instant.now().minusSeconds(2));
+            attendance.setLastHeartbeatAt(null);
+            ScanRequest req = new ScanRequest(rollNumber, null);
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, rollNumber)).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, rollNumber)).thenReturn(Optional.of(attendance));
+
+            assertThatThrownBy(() -> presenceService.submitScan(sessionId, req))
+                    .isInstanceOf(com.qrattend.exception.DuplicateResourceException.class);
+            verify(attendanceRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Rescan after the pending tab went silent past the grace period gets a fresh chance")
+        void rescanOfSilentPendingAllowed() {
+            attendance.setLastHeartbeatAt(Instant.now().minusSeconds(30));
+            ScanRequest req = new ScanRequest(rollNumber, null);
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, rollNumber)).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, rollNumber)).thenReturn(Optional.of(attendance));
+            when(attendanceRepository.save(any())).thenReturn(attendance);
+            when(jwtUtil.generateAttendanceToken(attendanceId)).thenReturn("mock-attendance-jwt");
+
+            ScanResponse response = presenceService.submitScan(sessionId, req);
+
+            assertThat(response.getStatus()).isEqualTo(AttendanceStatus.PENDING.name());
+            // The old tab's nonce no longer works
+            assertThat(attendance.getCurrentNonce()).isNotEqualTo("mock-nonce-123");
+        }
+
+        @Test
+        @DisplayName("Rescan of an invalidated roll number still gets a fresh chance")
+        void rescanOfInvalidatedAllowed() {
+            attendance.setStatus(AttendanceStatus.INVALIDATED);
+            ScanRequest req = new ScanRequest(rollNumber, null);
+
+            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(liveSession));
+            when(studentRepository.findByCourseIdAndRollNumber(courseId, rollNumber)).thenReturn(Optional.of(student));
+            when(attendanceRepository.findBySessionIdAndRollNumber(sessionId, rollNumber)).thenReturn(Optional.of(attendance));
+            when(attendanceRepository.save(any())).thenReturn(attendance);
+            when(jwtUtil.generateAttendanceToken(attendanceId)).thenReturn("mock-attendance-jwt");
+
+            ScanResponse response = presenceService.submitScan(sessionId, req);
+
+            assertThat(response.getStatus()).isEqualTo(AttendanceStatus.PENDING.name());
+        }
+
+        @Test
         @DisplayName("Throws SessionClosedException if session is expired/closed")
         void throwsIfSessionClosed() {
             ScanRequest req = new ScanRequest(rollNumber, null);
@@ -219,6 +312,48 @@ class PresenceServiceTest {
             verify(heartbeatRepository).save(eq(attendance.getSession().getId()), eq(attendance.getRollNumber()));
             // Nonce must be rotated on the entity
             assertThat(attendance.getCurrentNonce()).isEqualTo(response.getNextNonce());
+        }
+
+        @Test
+        @DisplayName("Late heartbeat from an old tab can't invalidate an accepted (marked present) record")
+        void lateHeartbeatDoesNotUndoConfirmed() {
+            attendance.setStatus(AttendanceStatus.CONFIRMED);
+            attendance.setLastHeartbeatAt(Instant.now().minusSeconds(60)); // way past the gap limit
+            when(attendanceRepository.findById(attendanceId)).thenReturn(Optional.of(attendance));
+
+            HeartbeatResponse response = presenceService.recordHeartbeat(
+                    attendanceId, new HeartbeatRequest("mock-nonce-123", false));
+
+            assertThat(response.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED.name());
+            assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
+            verify(attendanceRepository, never()).save(any());
+            verify(heartbeatRepository, never()).save(any(UUID.class), any(String.class));
+        }
+
+        @Test
+        @DisplayName("Webdriver flag on an accepted record doesn't invalidate it")
+        void webdriverDoesNotUndoConfirmed() {
+            attendance.setStatus(AttendanceStatus.CONFIRMED);
+            when(attendanceRepository.findById(attendanceId)).thenReturn(Optional.of(attendance));
+
+            HeartbeatResponse response = presenceService.recordHeartbeat(
+                    attendanceId, new HeartbeatRequest("mock-nonce-123", true));
+
+            assertThat(response.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED.name());
+            assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.CONFIRMED);
+        }
+
+        @Test
+        @DisplayName("Heartbeat on an invalidated record changes nothing and reports INVALIDATED")
+        void heartbeatOnInvalidatedIsNoOp() {
+            attendance.setStatus(AttendanceStatus.INVALIDATED);
+            when(attendanceRepository.findById(attendanceId)).thenReturn(Optional.of(attendance));
+
+            HeartbeatResponse response = presenceService.recordHeartbeat(
+                    attendanceId, new HeartbeatRequest("mock-nonce-123", false));
+
+            assertThat(response.getStatus()).isEqualTo(AttendanceStatus.INVALIDATED.name());
+            verify(heartbeatRepository, never()).save(any(UUID.class), any(String.class));
         }
 
         @Test

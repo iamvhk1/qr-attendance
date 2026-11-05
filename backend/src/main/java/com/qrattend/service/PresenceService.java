@@ -10,6 +10,7 @@ import com.qrattend.entity.Heartbeat;
 import com.qrattend.entity.QrSession;
 import com.qrattend.entity.Student;
 import com.qrattend.exception.AttendanceFraudException;
+import com.qrattend.exception.DuplicateResourceException;
 import com.qrattend.exception.ResourceNotFoundException;
 import com.qrattend.exception.SessionClosedException;
 import com.qrattend.repository.AttendanceRepository;
@@ -106,15 +107,38 @@ public class PresenceService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Roll number " + request.getRollNumber() + " is not enrolled in this course"));
 
-        // 3. Idempotency check — re-return existing record if student already scanned
+        // 3. Existing record for this roll number — rescan rules:
+        //    CONFIRMED            → refused (accepted attendance is final)
+        //    PENDING, tab active  → refused (only one scan may be verifying a roll number)
+        //    PENDING, tab gone    → treated as INVALIDATED (its next heartbeat would fail the
+        //                           gap check anyway), so it gets a fresh chance
+        //    INVALIDATED          → fresh chance
         Optional<Attendance> existing = attendanceRepository.findBySessionIdAndRollNumber(
                 sessionId, request.getRollNumber());
 
         if (existing.isPresent()) {
             Attendance att = existing.get();
-            // The user requested to REMOVE the anti-cheat re-join penalty.
-            // Every new scan gives a completely fresh chance for the remaining duration.
-            log.info("Student {} is rejoining/rescanning session {}. Resetting presenceStart for a fresh chance.", request.getRollNumber(), sessionId);
+            if (att.getStatus() == AttendanceStatus.CONFIRMED) {
+                log.warn("Rejected rescan of roll {} in session {}: attendance already confirmed",
+                        request.getRollNumber(), sessionId);
+                throw new DuplicateResourceException(
+                        "Roll number " + request.getRollNumber() + " is already marked present for this session.");
+            }
+            if (att.getStatus() == AttendanceStatus.PENDING) {
+                long secondsSilent = secondsSinceLastActivity(att);
+                if (secondsSilent <= RECOVERY_GRACE_SECONDS) {
+                    long retryIn = RECOVERY_GRACE_SECONDS - secondsSilent + 1;
+                    log.warn("Rejected rescan of roll {} in session {}: a scan is already being verified",
+                            request.getRollNumber(), sessionId);
+                    throw new DuplicateResourceException(
+                            "Roll number " + request.getRollNumber() + " is already being verified on another "
+                                    + "tab or device. Keep that page open. If you closed it, try again in "
+                                    + retryIn + " seconds.");
+                }
+                log.info("Roll {} in session {}: previous scan silent for {}s — invalidated, allowing a fresh scan",
+                        request.getRollNumber(), sessionId, secondsSilent);
+            }
+            log.info("Student {} is rescanning session {} after invalidation — fresh chance.", request.getRollNumber(), sessionId);
             
             att.setStatus(AttendanceStatus.PENDING);
             att.setPresenceStart(Instant.now()); // Give them a fresh start window
@@ -206,6 +230,16 @@ public class PresenceService {
                     .build();
         }
 
+        // 0b. Only a PENDING record is still being verified. An accepted record (e.g. the
+        //     professor marked the student present) must never be flipped by a late heartbeat
+        //     from an old tab, and an invalidated one needs a rescan, not more heartbeats.
+        if (attendance.getStatus() != AttendanceStatus.PENDING) {
+            return HeartbeatResponse.builder()
+                    .nextNonce("")
+                    .status(attendance.getStatus().name())
+                    .build();
+        }
+
         // 1. Immediately invalidate if automated browser is detected
         if (request.isWebdriver()) {
             log.warn("Webdriver detected for attendance {} — invalidating", attendanceId);
@@ -266,6 +300,13 @@ public class PresenceService {
                 .build();
     }
 
+
+    /** Seconds since this record's last heartbeat, or since its scan if none arrived yet. */
+    private static long secondsSinceLastActivity(Attendance att) {
+        Instant last = att.getLastHeartbeatAt() != null ? att.getLastHeartbeatAt() : att.getPresenceStart();
+        if (last == null) return Long.MAX_VALUE;
+        return ChronoUnit.SECONDS.between(last, Instant.now());
+    }
 
     // ── 3. Scheduled Coverage Computation ────────────────────────
 

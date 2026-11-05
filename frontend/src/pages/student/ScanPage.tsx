@@ -272,7 +272,9 @@ const ScanPage: React.FC = () => {
       } else if (e.status === 404) {
         setErrorMsg(`Roll number "${roll}" was not found in this class roster. Check your roll number and try again.`);
       } else if (e.status === 409) {
-        setErrorMsg('You have already scanned into this session. Your attendance is being tracked.');
+        // Already marked present, or already being verified on another tab/device —
+        // the server says which.
+        setErrorMsg(e.message || `Roll number "${roll}" has already scanned into this session.`);
       } else {
         setErrorMsg(e.message ?? 'Something went wrong. Please try scanning again.');
       }
