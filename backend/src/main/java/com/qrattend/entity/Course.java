@@ -2,6 +2,7 @@ package com.qrattend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.Length;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
@@ -30,7 +31,9 @@ public class Course {
     @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(nullable = false, length = 20)
+    // No length limit (TEXT on Postgres). Existing databases are widened at startup
+    // by CourseCodeColumnMigration, since ddl-auto=update never alters column types.
+    @Column(nullable = false, length = Length.LONG32)
     private String code;
 
     @Column(length = 20)

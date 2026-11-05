@@ -19,7 +19,6 @@ public class CourseRequest {
     private String name;
 
     @NotBlank(message = "Course code is required")
-    @Size(max = 20, message = "Course code must be at most 20 characters")
     private String code;
 
     @Size(max = 20, message = "Semester must be at most 20 characters")

@@ -333,6 +333,10 @@ code, pre {
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+  /* Long values (e.g. course codes have no length limit) wrap instead of overflowing */
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .badge-success { background: var(--accent-900);  color: var(--accent-400); }
 .badge-danger  { background: var(--danger-900);  color: var(--danger-400); }
