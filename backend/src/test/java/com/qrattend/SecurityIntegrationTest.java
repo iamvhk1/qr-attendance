@@ -59,6 +59,7 @@ class SecurityIntegrationTest {
     @Autowired private QrSessionRepository sessionRepository;
     @Autowired private DoubtRepository doubtRepository;
     @Autowired private AttendanceRepository attendanceRepository;
+    @Autowired private StudentRepository studentRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
     // ── Helpers ─────────────────────────────────────────────────────
@@ -870,6 +871,237 @@ class SecurityIntegrationTest {
             mockMvc.perform(get("/api/sessions/" + sessionId + "/doubts")
                             .header("Authorization", "Bearer " + jwtUtil.generateAttendanceToken(att.getId())))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GROUP 10: Cross-Professor Isolation — remaining endpoints
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Complements Group 4: every professor endpoint not covered there is attacked by
+     * Professor B against Professor A's data. Each test asserts both the 403 and,
+     * for write endpoints, that A's data is left untouched.
+     */
+    @Nested
+    @DisplayName("Group 10 — Cross-Professor Isolation (remaining endpoints)")
+    class CrossProfessorIsolationRemaining {
+
+        private String jwtA;
+        private String jwtB;
+        private UUID profA;
+        private UUID courseA;
+        private UUID sessionA;
+
+        @BeforeEach
+        void setUpTwoProfessors() throws Exception {
+            jwtA = createProfessorAndLogin("isoA2@test.com", "Pass1234!");
+            jwtB = createProfessorAndLogin("isoB2@test.com", "Pass1234!");
+            profA = jwtUtil.extractProfessorId(jwtA);
+            courseA = createCourse(jwtA);
+            sessionA = createLiveSession(courseA, profA);
+        }
+
+        private Student enrolInCourseA(String rollNumber) {
+            Course course = courseRepository.findById(courseA).orElseThrow();
+            return studentRepository.save(TestDataFactory.student(course, rollNumber, "Student " + rollNumber));
+        }
+
+        private Attendance pendingInSessionA(String rollNumber) {
+            QrSession session = sessionRepository.findById(sessionA).orElseThrow();
+            return attendanceRepository.save(TestDataFactory.pendingAttendance(session, rollNumber));
+        }
+
+        // ── Courses ─────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("B cannot list A's course sessions → 403")
+        void cannotListCourseSessions() throws Exception {
+            mockMvc.perform(get("/api/courses/" + courseA + "/sessions")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden());
+        }
+
+        // ── Students ────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("B cannot delete a student from A's course → 403, student still exists")
+        void cannotDeleteStudent() throws Exception {
+            Student student = enrolInCourseA("CS24B101");
+
+            mockMvc.perform(delete("/api/students/" + student.getId())
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden());
+
+            assertThat(studentRepository.findById(student.getId())).isPresent();
+        }
+
+        // ── Sessions ────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("B cannot start a session on A's course → 403, no session created")
+        void cannotCreateSessionOnCourse() throws Exception {
+            long before = sessionRepository.findByCourseId(courseA).size();
+
+            mockMvc.perform(post("/api/sessions")
+                            .header("Authorization", "Bearer " + jwtB)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"courseId\":\"" + courseA + "\",\"durationSeconds\":120}"))
+                    .andExpect(status().isForbidden());
+
+            assertThat(sessionRepository.findByCourseId(courseA)).hasSize((int) before);
+        }
+
+        @Test
+        @DisplayName("B cannot get the QR scan URL for A's session → 403, no URL leaked")
+        void cannotGetQrData() throws Exception {
+            MvcResult result = mockMvc.perform(get("/api/sessions/" + sessionA + "/qr-data")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden())
+                    .andReturn();
+
+            assertThat(result.getResponse().getContentAsString()).doesNotContain("/scan?token=");
+        }
+
+        @Test
+        @DisplayName("B cannot close A's session → 403, session stays open")
+        void cannotCloseSession() throws Exception {
+            mockMvc.perform(patch("/api/sessions/" + sessionA + "/close")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden());
+
+            assertThat(sessionRepository.findById(sessionA).orElseThrow().getClosedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("B cannot extend A's session → 403, expiry unchanged")
+        void cannotExtendSession() throws Exception {
+            QrSession before = sessionRepository.findById(sessionA).orElseThrow();
+            Instant expiresBefore = before.getExpiresAt();
+            int extendedBefore = before.getExtendedCount();
+
+            mockMvc.perform(patch("/api/sessions/" + sessionA + "/extend")
+                            .header("Authorization", "Bearer " + jwtB)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"additionalSeconds\":300}"))
+                    .andExpect(status().isForbidden());
+
+            QrSession after = sessionRepository.findById(sessionA).orElseThrow();
+            assertThat(after.getExpiresAt()).isEqualTo(expiresBefore);
+            assertThat(after.getExtendedCount()).isEqualTo(extendedBefore);
+        }
+
+        // ── Attendance ──────────────────────────────────────────────
+
+        @Test
+        @DisplayName("B cannot list attendance for A's session → 403, no records leaked")
+        void cannotListAttendance() throws Exception {
+            pendingInSessionA("CS24B102");
+
+            MvcResult result = mockMvc.perform(get("/api/sessions/" + sessionA + "/attendance")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden())
+                    .andReturn();
+
+            assertThat(result.getResponse().getContentAsString()).doesNotContain("CS24B102");
+        }
+
+        @Test
+        @DisplayName("B cannot mark manual attendance in A's session → 403, no record created")
+        void cannotAddManualAttendance() throws Exception {
+            enrolInCourseA("CS24B103");
+
+            mockMvc.perform(post("/api/sessions/" + sessionA + "/attendance/manual")
+                            .header("Authorization", "Bearer " + jwtB)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"rollNumber\":\"CS24B103\",\"reason\":\"forged\"}"))
+                    .andExpect(status().isForbidden());
+
+            assertThat(attendanceRepository.findBySessionIdAndRollNumber(sessionA, "CS24B103")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("B cannot override an attendance record in A's session → 403, status unchanged")
+        void cannotOverrideAttendance() throws Exception {
+            Attendance att = pendingInSessionA("CS24B104");
+
+            mockMvc.perform(patch("/api/sessions/attendance/" + att.getId() + "/override")
+                            .header("Authorization", "Bearer " + jwtB)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"status\":\"CONFIRMED\",\"reason\":\"forged\"}"))
+                    .andExpect(status().isForbidden());
+
+            Attendance after = attendanceRepository.findById(att.getId()).orElseThrow();
+            assertThat(after.getStatus()).isEqualTo(AttendanceStatus.PENDING);
+            assertThat(after.getManuallyAdded()).isFalse();
+            assertThat(after.getOverrideReason()).isNull();
+        }
+
+        // ── Reports ─────────────────────────────────────────────────
+
+        @Test
+        @DisplayName("B cannot download the Excel report for A's session → 403, no file")
+        void cannotDownloadSessionReport() throws Exception {
+            MvcResult result = mockMvc.perform(get("/api/reports/sessions/" + sessionA + "/excel")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden())
+                    .andReturn();
+
+            assertThat(result.getResponse().getHeader("Content-Disposition")).isNull();
+        }
+
+        @Test
+        @DisplayName("B cannot download the course report for A's course → 403, no file")
+        void cannotDownloadCourseReport() throws Exception {
+            MvcResult result = mockMvc.perform(get("/api/reports/courses/" + courseA + "/excel")
+                            .header("Authorization", "Bearer " + jwtB))
+                    .andExpect(status().isForbidden())
+                    .andReturn();
+
+            assertThat(result.getResponse().getHeader("Content-Disposition")).isNull();
+        }
+
+        // ── Positive control ────────────────────────────────────────
+
+        @Test
+        @DisplayName("Control: A can use the same endpoints on their own data (403s above are ownership, not breakage)")
+        void ownerCanUseTheSameEndpoints() throws Exception {
+            enrolInCourseA("CS24B105");
+            Attendance att = pendingInSessionA("CS24B106");
+
+            mockMvc.perform(get("/api/courses/" + courseA + "/sessions")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/sessions/" + sessionA + "/qr-data")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/sessions/" + sessionA + "/attendance")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
+            mockMvc.perform(post("/api/sessions/" + sessionA + "/attendance/manual")
+                            .header("Authorization", "Bearer " + jwtA)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"rollNumber\":\"CS24B105\",\"reason\":\"battery died\"}"))
+                    .andExpect(status().is2xxSuccessful());
+            mockMvc.perform(patch("/api/sessions/attendance/" + att.getId() + "/override")
+                            .header("Authorization", "Bearer " + jwtA)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"status\":\"CONFIRMED\",\"reason\":\"verified\"}"))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/reports/sessions/" + sessionA + "/excel")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/reports/courses/" + courseA + "/excel")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
+            mockMvc.perform(patch("/api/sessions/" + sessionA + "/extend")
+                            .header("Authorization", "Bearer " + jwtA)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"additionalSeconds\":60}"))
+                    .andExpect(status().isOk());
+            mockMvc.perform(patch("/api/sessions/" + sessionA + "/close")
+                            .header("Authorization", "Bearer " + jwtA))
+                    .andExpect(status().isOk());
         }
     }
 }

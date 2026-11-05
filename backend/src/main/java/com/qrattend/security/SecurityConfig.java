@@ -29,6 +29,14 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
+    /**
+     * Mirrors Spring Boot's own switch for the H2 console. The console path is only
+     * opened up (and framing allowed) when the console is actually enabled, which is
+     * local development only — {@code application-prod.properties} sets it to false.
+     */
+    @Value("${spring.h2.console.enabled:false}")
+    private boolean h2ConsoleEnabled;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -40,7 +48,14 @@ public class SecurityConfig {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
-            .authorizeHttpRequests(auth -> auth
+            .authorizeHttpRequests(auth -> {
+                // H2 DB console — only opened when the console is enabled (local dev).
+                // In production it is disabled, so this path falls through to
+                // anyRequest().authenticated() below.
+                if (h2ConsoleEnabled) {
+                    auth.requestMatchers("/h2-console/**").permitAll();
+                }
+                auth
                 // Public endpoints
                 .requestMatchers("/api/auth/**").permitAll() // Login / Register
                 .requestMatchers("/", "/health").permitAll() // Render health check
@@ -49,7 +64,6 @@ public class SecurityConfig {
                 // (app.admin.secret). Any NEW endpoint under /api/admin/ will also be
                 // publicly accessible — ensure controller-level authorization is applied.
                 .requestMatchers("/api/admin/**").permitAll()
-                .requestMatchers("/h2-console/**").permitAll() // H2 DB console
                 // Role specific
                 .requestMatchers("/api/professor/**").hasRole("PROFESSOR")
                 .requestMatchers("/api/courses/**").hasRole("PROFESSOR")
@@ -61,11 +75,14 @@ public class SecurityConfig {
                 .requestMatchers("/api/student/heartbeat").hasRole("ATTENDANCE")
                 .requestMatchers("/api/student/doubt").hasRole("ATTENDANCE")
                 // Any other request must be authenticated
-                .anyRequest().authenticated()
-            );
+                .anyRequest().authenticated();
+            });
 
-        // Required for H2 console to work properly (it uses frames)
-        http.headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable));
+        // The H2 console uses frames, so allow same-origin framing only when it is enabled.
+        // Otherwise keep Spring Security's default X-Frame-Options: DENY (clickjacking protection).
+        if (h2ConsoleEnabled) {
+            http.headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin));
+        }
 
         // Add JWT filter before the standard authentication filter
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
