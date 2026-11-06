@@ -101,6 +101,24 @@ class ExcelImportUtilTest {
         }
 
         @Test
+        void deduplicatesIgnoringLetterCase() throws IOException {
+            ByteArrayInputStream excel = createExcel("roll_number", "full_name", new String[][]{
+                    {"CS24B001", "Alice"},
+                    {"cs24b001", "Alice Lower Case"},
+                    {"Cs24B001", "Alice Mixed Case"},
+                    {"CS24B002", "Bob"}
+            });
+
+            List<StudentRequest> result = ExcelImportUtil.parseStudentExcel(excel);
+
+            // "cs24b001" is the same student as "CS24B001": one row, first spelling kept
+            assertThat(result).hasSize(2);
+            assertThat(result.get(0).getRollNumber()).isEqualTo("CS24B001");
+            assertThat(result.get(0).getFullName()).isEqualTo("Alice");
+            assertThat(result.get(1).getRollNumber()).isEqualTo("CS24B002");
+        }
+
+        @Test
         void skipsEmptyRows() throws IOException {
             ByteArrayInputStream excel = createExcel("roll_number", "full_name", new String[][]{
                     {"CS24B001", "Alice"},

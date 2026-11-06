@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -38,6 +41,7 @@ class RollNumberCaseIntegrationTest {
     @Autowired private StudentRepository studentRepository;
     @Autowired private QrSessionRepository sessionRepository;
     @Autowired private AttendanceRepository attendanceRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     private Professor professor;
     private Course course;
@@ -121,6 +125,32 @@ class RollNumberCaseIntegrationTest {
         MockHttpServletResponse res = manual("cs24b999");
         assertThat(res.getStatus()).isEqualTo(404);
         assertThat(attendanceRecords()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("The database refuses a second student whose roll number differs only in case")
+    void databaseRefusesCaseDifferentDuplicate() {
+        assertThatThrownBy(() ->
+                studentRepository.saveAndFlush(TestDataFactory.student(course, "cs24b077", "Duplicate Student")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(studentRepository.findByCourseId(course.getId())).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Rows from before the rule (case-duplicates with no key): manual and scan still work (no 500)")
+    void existingCaseDuplicateStudents() throws Exception {
+        // Simulate rows from before the rule: both rows have an empty roll_key.
+        jdbcTemplate.update("UPDATE students SET roll_key = NULL WHERE course_id = ?", course.getId());
+        Student legacy = studentRepository.save(TestDataFactory.student(course, "cs24b077", "Duplicate Student"));
+        jdbcTemplate.update("UPDATE students SET roll_key = NULL WHERE id = ?", legacy.getId());
+
+        assertThat(manual("cs24b077").getStatus()).isEqualTo(201);
+        assertThat(attendanceRecords()).hasSize(1);
+        assertThat(attendanceRecords().get(0).getRollNumber()).isEqualToIgnoringCase(ROLL);
+
+        // The same student scanning afterwards is the same record (already confirmed -> 409), not an error
+        assertThat(scan("CS24B077").getStatus()).isEqualTo(409);
+        assertThat(attendanceRecords()).hasSize(1);
     }
 
     // ── student scan ──

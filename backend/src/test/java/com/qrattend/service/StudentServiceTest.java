@@ -193,5 +193,81 @@ class StudentServiceTest {
             verify(studentRepository, times(1)).save(any(Student.class)); // Only Dave added
             verify(studentRepository, times(2)).delete(any(Student.class)); // Bob + Charlie deleted
         }
+
+        /** Builds an .xlsx with the headers roll_number / full_name and the given rows. */
+        private java.io.ByteArrayInputStream sheet(String[][] rows) throws Exception {
+            org.apache.poi.xssf.usermodel.XSSFWorkbook workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+            org.apache.poi.ss.usermodel.Sheet s = workbook.createSheet("Students");
+            org.apache.poi.ss.usermodel.Row header = s.createRow(0);
+            header.createCell(0).setCellValue("roll_number");
+            header.createCell(1).setCellValue("full_name");
+            for (int i = 0; i < rows.length; i++) {
+                org.apache.poi.ss.usermodel.Row r = s.createRow(i + 1);
+                r.createCell(0).setCellValue(rows[i][0]);
+                r.createCell(1).setCellValue(rows[i][1]);
+            }
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            workbook.write(out);
+            workbook.close();
+            return new java.io.ByteArrayInputStream(out.toByteArray());
+        }
+
+        @Test
+        @DisplayName("A sheet spelling roll numbers in another letter case changes nothing")
+        void caseOnlyDifferenceIsUnchanged() throws Exception {
+            Student alice = buildStudent("CS24B001", "Alice");
+            Student bob = buildStudent("CS24B002", "Bob");
+
+            when(courseService.getOwnedCourse(courseId, profId)).thenReturn(course);
+            when(studentRepository.findByCourseId(courseId)).thenReturn(List.of(alice, bob));
+
+            RosterSyncReport report = studentService.importStudents(courseId, profId,
+                    sheet(new String[][]{{"cs24b001", "Alice"}, {"Cs24B002", "Bob"}}));
+
+            assertThat(report.getAdded()).isEmpty();
+            assertThat(report.getRemoved()).isEmpty();
+            assertThat(report.getUnchanged()).isEqualTo(2);
+            assertThat(report.getTotalAfterSync()).isEqualTo(2);
+            verify(studentRepository, never()).save(any(Student.class));
+            verify(studentRepository, never()).delete(any(Student.class));
+        }
+
+        @Test
+        @DisplayName("Case differences do not hide real additions and removals")
+        void caseDifferenceMixedWithRealChanges() throws Exception {
+            Student alice = buildStudent("CS24B001", "Alice");
+            Student bob = buildStudent("CS24B002", "Bob");
+
+            when(courseService.getOwnedCourse(courseId, profId)).thenReturn(course);
+            when(studentRepository.findByCourseId(courseId)).thenReturn(List.of(alice, bob));
+            when(studentRepository.save(any(Student.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // Alice in lower case (unchanged), Bob missing (removed), Dave new
+            RosterSyncReport report = studentService.importStudents(courseId, profId,
+                    sheet(new String[][]{{"cs24b001", "Alice"}, {"CS24B004", "Dave"}}));
+
+            assertThat(report.getAdded()).containsExactly("CS24B004");
+            assertThat(report.getRemoved()).containsExactly("CS24B002");
+            assertThat(report.getUnchanged()).isEqualTo(1);
+            assertThat(report.getTotalAfterSync()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("A course that already holds case-different duplicates can still be synced")
+        void existingCaseDuplicatesDoNotBreakSync() throws Exception {
+            Student upper = buildStudent("CS24B005", "Eve");
+            Student lower = buildStudent("cs24b005", "Eve Duplicate");
+
+            when(courseService.getOwnedCourse(courseId, profId)).thenReturn(course);
+            when(studentRepository.findByCourseId(courseId)).thenReturn(List.of(upper, lower));
+
+            RosterSyncReport report = studentService.importStudents(courseId, profId,
+                    sheet(new String[][]{{"CS24B005", "Eve"}}));
+
+            // No exception from duplicate keys; nothing is added or deleted automatically
+            assertThat(report.getAdded()).isEmpty();
+            assertThat(report.getRemoved()).isEmpty();
+            verify(studentRepository, never()).delete(any(Student.class));
+        }
     }
 }

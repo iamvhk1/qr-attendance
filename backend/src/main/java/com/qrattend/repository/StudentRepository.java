@@ -15,10 +15,22 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 
     List<Student> findByCourseId(UUID courseId);
 
-    /** Case-insensitive: "cs24b075" finds the student enrolled as "CS24B075". */
-    @Query("SELECT s FROM Student s WHERE s.course.id = :courseId AND UPPER(s.rollNumber) = UPPER(:rollNumber)")
-    Optional<Student> findByCourseIdAndRollNumber(@Param("courseId") UUID courseId,
-                                                  @Param("rollNumber") String rollNumber);
+    /**
+     * All students of the course whose roll number matches ignoring letter case, oldest first.
+     * Normally zero or one; more than one only if the course already holds case-different
+     * duplicates (for example from an older import).
+     */
+    @Query("SELECT s FROM Student s WHERE s.course.id = :courseId AND UPPER(s.rollNumber) = UPPER(:rollNumber) ORDER BY s.createdAt ASC")
+    List<Student> findAllByCourseIdAndRollNumberIgnoreCase(@Param("courseId") UUID courseId,
+                                                           @Param("rollNumber") String rollNumber);
+
+    /**
+     * Case-insensitive: "cs24b075" finds the student enrolled as "CS24B075". If the course holds
+     * case-different duplicates, the oldest one is returned instead of failing.
+     */
+    default Optional<Student> findByCourseIdAndRollNumber(UUID courseId, String rollNumber) {
+        return findAllByCourseIdAndRollNumberIgnoreCase(courseId, rollNumber).stream().findFirst();
+    }
 
     /** Case-insensitive: true if the course already has this roll number in any letter case. */
     @Query("SELECT COUNT(s) > 0 FROM Student s WHERE s.course.id = :courseId AND UPPER(s.rollNumber) = UPPER(:rollNumber)")

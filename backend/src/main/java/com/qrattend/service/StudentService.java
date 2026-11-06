@@ -119,18 +119,20 @@ public class StudentService {
         // 2. Fetch existing students
         List<Student> existingStudents = studentRepository.findByCourseId(courseId);
 
-        // 3. Build maps for comparison
+        // 3. Build maps for comparison. Roll numbers are compared ignoring letter case, so a sheet
+        //    that spells "cs24b077" does not remove and re-add the stored "CS24B077". The merge
+        //    function keeps the first one if the course already holds case-different duplicates.
         Map<String, Student> existingByRoll = existingStudents.stream()
-                .collect(Collectors.toMap(Student::getRollNumber, s -> s));
+                .collect(Collectors.toMap(s -> rollKey(s.getRollNumber()), s -> s, (first, duplicate) -> first));
 
-        Set<String> excelRollNumbers = fromExcel.stream()
-                .map(StudentRequest::getRollNumber)
+        Set<String> excelRollKeys = fromExcel.stream()
+                .map(r -> rollKey(r.getRollNumber()))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
         // 4. ADDITIONS — in Excel but not in DB
         List<String> added = new ArrayList<>();
         for (StudentRequest req : fromExcel) {
-            if (!existingByRoll.containsKey(req.getRollNumber())) {
+            if (!existingByRoll.containsKey(rollKey(req.getRollNumber()))) {
                 Student student = Student.builder()
                         .course(course)
                         .rollNumber(req.getRollNumber())
@@ -144,7 +146,7 @@ public class StudentService {
         // 5. DELETIONS — in DB but not in Excel
         List<String> removed = new ArrayList<>();
         for (Student existing : existingStudents) {
-            if (!excelRollNumbers.contains(existing.getRollNumber())) {
+            if (!excelRollKeys.contains(rollKey(existing.getRollNumber()))) {
                 studentRepository.delete(existing);
                 removed.add(existing.getRollNumber());
             }
@@ -164,5 +166,10 @@ public class StudentService {
                 .unchanged(unchanged)
                 .totalAfterSync(totalAfterSync)
                 .build();
+    }
+
+    /** Comparison key for a roll number: trimmed and upper-cased, so letter case never matters. */
+    private static String rollKey(String rollNumber) {
+        return rollNumber.trim().toUpperCase(Locale.ROOT);
     }
 }

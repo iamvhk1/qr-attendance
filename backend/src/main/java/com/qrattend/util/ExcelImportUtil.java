@@ -92,8 +92,9 @@ public class ExcelImportUtil {
                     continue; // Skip invalid roll numbers
                 }
 
-                // Deduplicate by roll number (keep first occurrence)
-                if (seenRollNumbers.add(rollNumber)) {
+                // Deduplicate by roll number, ignoring letter case (keep first occurrence):
+                // "cs24b077" and "CS24B077" are the same student.
+                if (seenRollNumbers.add(rollNumber.toUpperCase(Locale.ROOT))) {
                     students.add(StudentRequest.builder()
                             .rollNumber(rollNumber)
                             .fullName(fullName)
