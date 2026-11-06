@@ -474,6 +474,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.modal-field input,
 .modal-field select,
 .modal-field textarea {
   background: var(--bg-elevated);
@@ -486,6 +487,7 @@
   resize: vertical;
   transition: border-color 0.15s;
 }
+.modal-field input:focus,
 .modal-field select:focus,
 .modal-field textarea:focus {
   outline: none;
