@@ -25,9 +25,15 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     @Query("SELECT a FROM Attendance a JOIN FETCH a.session s WHERE s.course.id = :courseId")
     List<Attendance> findAllByCourseId(@Param("courseId") UUID courseId);
 
-    Optional<Attendance> findBySessionIdAndRollNumber(UUID sessionId, String rollNumber);
+    /** Case-insensitive roll number match. */
+    @Query("SELECT a FROM Attendance a WHERE a.session.id = :sessionId AND UPPER(a.rollNumber) = UPPER(:rollNumber)")
+    Optional<Attendance> findBySessionIdAndRollNumber(@Param("sessionId") UUID sessionId,
+                                                      @Param("rollNumber") String rollNumber);
 
-    boolean existsBySessionIdAndRollNumber(UUID sessionId, String rollNumber);
+    /** Case-insensitive roll number match. */
+    @Query("SELECT COUNT(a) > 0 FROM Attendance a WHERE a.session.id = :sessionId AND UPPER(a.rollNumber) = UPPER(:rollNumber)")
+    boolean existsBySessionIdAndRollNumber(@Param("sessionId") UUID sessionId,
+                                           @Param("rollNumber") String rollNumber);
 
     /**
      * Find all attendance records in a specific status for a session.

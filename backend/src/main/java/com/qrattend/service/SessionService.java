@@ -394,15 +394,19 @@ public class SessionService {
 
         UUID courseId = session.getCourse().getId();
 
-        // Verify the student is enrolled in this course
-        Student enrolledStudent = studentRepository
-                .findByCourseIdAndRollNumber(courseId, request.getRollNumber())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Roll number " + request.getRollNumber() + " is not enrolled in this course"));
+        // The typed roll number may differ in letter case or have stray spaces
+        String typedRollNumber = request.getRollNumber().trim();
 
-        // Idempotency: if a record already exists, just mark it CONFIRMED
+        // Verify the student is enrolled in this course (case-insensitive)
+        Student enrolledStudent = studentRepository
+                .findByCourseIdAndRollNumber(courseId, typedRollNumber)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Roll number " + typedRollNumber + " is not enrolled in this course"));
+
+        // Idempotency: if a record already exists, just mark it CONFIRMED.
+        // Look it up by the enrolled spelling so one student never gets two records.
         Optional<Attendance> existing = attendanceRepository
-                .findBySessionIdAndRollNumber(sessionId, request.getRollNumber());
+                .findBySessionIdAndRollNumber(sessionId, enrolledStudent.getRollNumber());
 
         Attendance attendance;
         if (existing.isPresent()) {
@@ -427,7 +431,7 @@ public class SessionService {
 
         Attendance saved = attendanceRepository.save(attendance);
         log.info("Manual attendance added: student={} session={} by professor={} reason={}",
-                request.getRollNumber(), sessionId, professorId, request.getReason());
+                enrolledStudent.getRollNumber(), sessionId, professorId, request.getReason());
         return AttendanceResponse.fromEntity(saved);
     }
 

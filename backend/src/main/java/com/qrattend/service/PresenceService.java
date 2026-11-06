@@ -103,9 +103,14 @@ public class PresenceService {
 
         // 2. Verify the student is enrolled in this course
         UUID courseId = session.getCourse().getId();
-        Student student = studentRepository.findByCourseIdAndRollNumber(courseId, request.getRollNumber())
+        // The typed roll number may differ in letter case or have stray spaces; the lookup is
+        // case-insensitive and everything below uses the enrolled spelling, so one student
+        // never ends up with two attendance records.
+        String typedRollNumber = request.getRollNumber().trim();
+        Student student = studentRepository.findByCourseIdAndRollNumber(courseId, typedRollNumber)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Roll number " + request.getRollNumber() + " is not enrolled in this course"));
+                        "Roll number " + typedRollNumber + " is not enrolled in this course"));
+        String rollNumber = student.getRollNumber();
 
         // 3. Existing record for this roll number — rescan rules:
         //    CONFIRMED            → refused (accepted attendance is final)
@@ -114,31 +119,31 @@ public class PresenceService {
         //                           gap check anyway), so it gets a fresh chance
         //    INVALIDATED          → fresh chance
         Optional<Attendance> existing = attendanceRepository.findBySessionIdAndRollNumber(
-                sessionId, request.getRollNumber());
+                sessionId, rollNumber);
 
         if (existing.isPresent()) {
             Attendance att = existing.get();
             if (att.getStatus() == AttendanceStatus.CONFIRMED) {
                 log.warn("Rejected rescan of roll {} in session {}: attendance already confirmed",
-                        request.getRollNumber(), sessionId);
+                        rollNumber, sessionId);
                 throw new DuplicateResourceException(
-                        "Roll number " + request.getRollNumber() + " is already marked present for this session.");
+                        "Roll number " + rollNumber + " is already marked present for this session.");
             }
             if (att.getStatus() == AttendanceStatus.PENDING) {
                 long secondsSilent = secondsSinceLastActivity(att);
                 if (secondsSilent <= RECOVERY_GRACE_SECONDS) {
                     long retryIn = RECOVERY_GRACE_SECONDS - secondsSilent + 1;
                     log.warn("Rejected rescan of roll {} in session {}: a scan is already being verified",
-                            request.getRollNumber(), sessionId);
+                            rollNumber, sessionId);
                     throw new DuplicateResourceException(
-                            "Roll number " + request.getRollNumber() + " is already being verified on another "
+                            "Roll number " + rollNumber + " is already being verified on another "
                                     + "tab or device. Keep that page open. If you closed it, try again in "
                                     + retryIn + " seconds.");
                 }
                 log.info("Roll {} in session {}: previous scan silent for {}s — invalidated, allowing a fresh scan",
-                        request.getRollNumber(), sessionId, secondsSilent);
+                        rollNumber, sessionId, secondsSilent);
             }
-            log.info("Student {} is rescanning session {} after invalidation — fresh chance.", request.getRollNumber(), sessionId);
+            log.info("Student {} is rescanning session {} after invalidation — fresh chance.", rollNumber, sessionId);
             
             att.setStatus(AttendanceStatus.PENDING);
             att.setPresenceStart(Instant.now()); // Give them a fresh start window
@@ -146,7 +151,7 @@ public class PresenceService {
             att.setCurrentNonce(UUID.randomUUID().toString().replace("-", ""));
             
             // Delete old heartbeats to give a completely fresh slate
-            heartbeatRepository.deleteBySessionIdAndRollNumber(sessionId, request.getRollNumber());
+            heartbeatRepository.deleteBySessionIdAndRollNumber(sessionId, rollNumber);
             
             att = attendanceRepository.save(att);
             return ScanResponse.builder()
@@ -163,7 +168,7 @@ public class PresenceService {
         // 5. Create and persist the attendance record
         Attendance attendance = Attendance.builder()
                 .session(session)
-                .rollNumber(request.getRollNumber())
+                .rollNumber(rollNumber)
                 .studentName(student.getFullName())
                 .status(AttendanceStatus.PENDING)
                 .presenceStart(Instant.now())
@@ -172,7 +177,7 @@ public class PresenceService {
                 .build();
 
         attendance = attendanceRepository.save(attendance);
-        log.info("Scan accepted: student={} session={} attendanceId={}", request.getRollNumber(), sessionId, attendance.getId());
+        log.info("Scan accepted: student={} session={} attendanceId={}", rollNumber, sessionId, attendance.getId());
 
         // 6. Issue an ATTENDANCE JWT for subsequent heartbeat pings
         String attendanceToken = jwtUtil.generateAttendanceToken(attendance.getId());
